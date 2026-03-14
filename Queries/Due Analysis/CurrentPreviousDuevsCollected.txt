@@ -1,0 +1,705 @@
+Current Month Due & Collected:loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "startDate": {
+        "$dateFromString": {
+          "dateString": {"$concat": [{{start_date}}, "T18:30:00.000+00:00"]}
+        }
+      },
+      "endDate": {
+        "$dateFromString": {
+          "dateString": {"$concat": [{{end_date}}, "T18:29:59.000+00:00"]}
+        }
+      }
+    }
+  },
+  {
+    "$match": {
+      "$expr": {
+        "$and": [
+          { "$gte": [ "$dueDate", "$startDate" ] },
+          { "$lte": [ "$dueDate", "$endDate" ] }
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$dateToString": {
+          "format": "%Y-%m-%d",
+          "date": "$dueDate",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "date": { "$first": "$dueDate" },
+      "dueAmount": { "$sum": "$emiAmount" },
+      "principalDue": { "$sum": "$principalAmount" },
+      "interestDue": { "$sum": "$totalInterest" },
+      "lateChargesDue": { "$sum": "$lateCharges" },
+      "totalDue": { "$sum": "$totalRepayment" },
+      "loansSet": { "$addToSet": "$_id" },
+      "totalOutstanding": { "$sum": "$totalOutstanding" },
+      "lateChargeInterest": { "$sum": "$lateChargeInterest" },
+      "paid": {
+        "$sum": {
+          "$cond": [
+            { "$eq": [ "$status", "CLOSED" ] },
+            { "$subtract": [ "$totalRepayment", "$totalOutstanding" ] },
+            0
+          ]
+        }
+      },
+      "partial": {
+        "$sum": {
+          "$cond": [
+            { "$and": [
+              { "$ne": [ "$status", "CLOSED" ] },
+              { "$gt": [ { "$subtract": [ "$totalRepayment", "$totalOutstanding" ] }, 0 ] }
+            ]},
+            { "$subtract": [ "$totalRepayment", "$totalOutstanding" ] },
+            0
+          ]
+        }
+      },
+      "pendingCount": {
+        "$sum": {
+          "$cond": [
+            { "$in": [ "$status", [ "ACTIVE", "OVERDUE", "NPA" ] ] },
+            1,
+            0
+          ]
+        }
+      },
+      "paidCount": {
+        "$sum": {
+          "$cond": [
+            { "$eq": [ "$status", "CLOSED" ] },
+            1,
+            0
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "day": {
+        "$dayOfMonth": {
+          "date": "$date",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "dueAmount": 1,
+      "principalDue": 1,
+      "interestDue": 1,
+      "lateChargesDue": 1,
+      "totalDue": 1,
+      "loansCount": { "$size": "$loansSet" },
+      "collected": { "$add": ["$paid", "$partial"] },
+      "pendingCount": 1,
+      "paidCount": 1,
+      "totalOutstanding": 1,
+      "lateChargeInterest": 1,
+      "collectionRate": {
+        "$divide": [
+          {
+            "$floor": {
+              "$multiply": [
+                {
+                  "$divide": [
+                    { "$add": ["$paid", "$partial"] },
+                    {
+                      "$cond": [
+                        { "$gt": ["$totalDue", 0] },
+                        "$totalDue",
+                        1
+                      ]
+                    }
+                  ]
+                },
+                10000
+              ]
+            }
+          },
+          100
+        ]
+      }
+    }
+  },
+  { "$sort": { "day": 1 } }
+]
+
+
+many metrics:loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "startDate": {
+        "$dateFromString": {
+          "dateString": { "$concat": [{{start_date}}, "T18:30:00.000+00:00"] }
+        }
+      },
+      "endDate": {
+        "$dateFromString": {
+          "dateString": { "$concat": [{{end_date}}, "T18:29:59.000+00:00"] }
+        }
+      }
+    }
+  },
+  {
+    "$match": {
+      "$expr": {
+        "$and": [
+          { "$gte": ["$dueDate", "$startDate"] },
+          { "$lte": ["$dueDate", "$endDate"] }
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "totalLoansCount": { "$sum": 1 },
+      "totalDueAmount": { "$sum": "$emiAmount" },
+      "totalPrincipalDue": { "$sum": "$principalAmount" },
+      "totalInterestDue": { "$sum": "$totalInterest" },
+      "totalLateChargesDue": { "$sum": "$lateCharges" },
+      "totalDue": { "$sum": "$totalRepayment" },
+      "totalOutstanding": { "$sum": "$totalOutstanding" },
+      "totalLateChargeInterest": { "$sum": "$lateChargeInterest" },
+      "totalOverdueLoans": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$status", "OVERDUE"] }, 1, 0]
+        }
+      },
+      "paid": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$status", "CLOSED"] },
+            { "$subtract": ["$totalRepayment", "$totalOutstanding"] },
+            0
+          ]
+        }
+      },
+      "partial": {
+        "$sum": {
+          "$cond": [
+            { "$and": [
+              { "$ne": ["$status", "CLOSED"] },
+              { "$gt": [{ "$subtract": ["$totalRepayment", "$totalOutstanding"] }, 0] }
+            ]},
+            { "$subtract": ["$totalRepayment", "$totalOutstanding"] },
+            0
+          ]
+        }
+      },
+      "pendingCount": {
+        "$sum": {
+          "$cond": [{ "$in": ["$status", ["ACTIVE", "OVERDUE", "NPA"]] }, 1, 0]
+        }
+      },
+      "paidCount": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$status", "CLOSED"] }, 1, 0]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "totalLoansCount": 1,
+      "totalDueAmount": 1,
+      "totalPrincipalDue": 1,
+      "totalInterestDue": 1,
+      "totalLateChargesDue": 1,
+      "totalDue": 1,
+      "totalOutstanding": 1,
+      "totalLateChargeInterest": 1,
+      "totalOverdueLoans": 1,
+      "totalCollected": { "$add": ["$paid", "$partial"] },
+      "pendingCount": 1,
+      "paidCount": 1,
+      "shortfall": {
+        "$subtract": [
+          "$totalDue",
+          { "$add": ["$paid", "$partial"] }
+        ]
+      },
+      "collectionRate": {
+        "$divide": [
+          {
+            "$floor": {
+              "$multiply": [
+                {
+                  "$divide": [
+                    { "$add": ["$paid", "$partial"] },
+                    { "$cond": [{ "$gt": ["$totalDue", 0] }, "$totalDue", 1] }
+                  ]
+                },
+                10000
+              ]
+            }
+          },
+          100
+        ]
+      }
+    }
+  }
+]
+
+
+
+DPD Bucket Distribution:loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "dpdBucketSorted": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$dpdBucket", "0"] }, "then": "0" },
+            { "case": { "$eq": ["$dpdBucket", "1-30"] }, "then": "1-30" },
+            { "case": { "$eq": ["$dpdBucket", "31-60"] }, "then": "31-60" },
+            { "case": { "$eq": ["$dpdBucket", "61-90"] }, "then": "61-90" },
+            { "case": { "$eq": ["$dpdBucket", "90+"] }, "then": "90+" }
+          ],
+          "default": "0"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$dpdBucketSorted",
+      "loanCount": { "$sum": 1 },
+      "totalDue": { "$sum": "$totalRepayment" },
+      "paid": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$status", "CLOSED"] },
+            { "$subtract": ["$totalRepayment", "$totalOutstanding"] },
+            0
+          ]
+        }
+      },
+      "partial": {
+        "$sum": {
+          "$cond": [
+            { "$and": [
+              { "$ne": ["$status", "CLOSED"] },
+              { "$gt": [{ "$subtract": ["$totalRepayment", "$totalOutstanding"] }, 0] }
+            ]},
+            { "$subtract": ["$totalRepayment", "$totalOutstanding"] },
+            0
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "dpdBucket": "$_id",
+      "loanCount": 1,
+      "totalDue": 1,
+      "totalCollected": { "$add": ["$paid", "$partial"] },
+      "shortfall": {
+        "$subtract": [
+          "$totalDue",
+          { "$add": ["$paid", "$partial"] }
+        ]
+      },
+      "collectionRate": {
+        "$divide": [
+          {
+            "$floor": {
+              "$multiply": [
+                {
+                  "$divide": [
+                    { "$add": ["$paid", "$partial"] },
+                    { "$cond": [{ "$gt": ["$totalDue", 0] }, "$totalDue", 1] }
+                  ]
+                },
+                10000
+              ]
+            }
+          },
+          100
+        ]
+      }
+    }
+  },
+  {
+    "$sort": { "dpdBucket": 1 }
+  }
+]
+
+
+
+Payment Collected On A Particular Day of Month:payments
+[
+  {
+    "$match": {
+      "status": "SUCCESS",
+      "paymentType": {"$ne": "DISBURSEMENT"}
+    }
+  },
+  {
+    "$addFields": {
+      "startDate": {
+        "$dateFromString": {
+          "dateString": {"$concat": [{{start_date}}, "T18:30:00.000+00:00"]}
+        }
+      },
+      "endDate": {
+        "$dateFromString": {
+          "dateString": {"$concat": [{{end_date}}, "T18:29:59.000+00:00"]}
+        }
+      }
+    }
+  },
+  {
+    "$match": {
+      "$expr": {
+        "$and": [
+          { "$gte": ["$paymentDate", "$startDate"] },
+          { "$lte": ["$paymentDate", "$endDate"] }
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$dateToString": {
+          "format": "%Y-%m-%d",
+          "date": "$paymentDate",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "date": { "$first": "$paymentDate" },
+      "totalCollected": {
+        "$sum": {"$ifNull": ["$amount", 0]}
+      },
+      "paymentCount": {"$sum": 1},
+      "emiCollected": {
+        "$sum": {
+          "$cond": [
+            {"$eq": ["$paymentType", "EMI"]},
+            {"$ifNull": ["$amount", 0]},
+            0
+          ]
+        }
+      },
+      "emiCount": {
+        "$sum": {
+          "$cond": [{"$eq": ["$paymentType", "EMI"]}, 1, 0]
+        }
+      },
+      "foreclosureCollected": {
+        "$sum": {
+          "$cond": [
+            {"$eq": ["$paymentType", "FORECLOSURE"]},
+            {"$ifNull": ["$amount", 0]},
+            0
+          ]
+        }
+      },
+      "foreclosureCount": {
+        "$sum": {
+          "$cond": [{"$eq": ["$paymentType", "FORECLOSURE"]}, 1, 0]
+        }
+      },
+      "partPaymentCollected": {
+        "$sum": {
+          "$cond": [
+            {"$eq": ["$paymentType", "PART_PAYMENT"]},
+            {"$ifNull": ["$amount", 0]},
+            0
+          ]
+        }
+      },
+      "partPaymentCount": {
+        "$sum": {
+          "$cond": [{"$eq": ["$paymentType", "PART_PAYMENT"]}, 1, 0]
+        }
+      },
+      "repaymentCollected": {
+        "$sum": {
+          "$cond": [
+            {"$eq": ["$paymentType", "REPAYMENT"]},
+            {"$ifNull": ["$amount", 0]},
+            0
+          ]
+        }
+      },
+      "repaymentCount": {
+        "$sum": {
+          "$cond": [{"$eq": ["$paymentType", "REPAYMENT"]}, 1, 0]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "day": {
+        "$dayOfMonth": {
+          "date": "$date",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "date": "$_id",
+      "totalCollected": 1,
+      "paymentCount": 1,
+      "emiCollected": 1,
+      "emiCount": 1,
+      "foreclosureCollected": 1,
+      "foreclosureCount": 1,
+      "partPaymentCollected": 1,
+      "partPaymentCount": 1,
+      "repaymentCollected": 1,
+      "repaymentCount": 1
+    }
+  },
+  {
+    "$sort": {"date": 1}
+  }
+]
+
+
+
+Payment Scenario For A Month:payments
+[
+  {
+    "$match": {
+      "status": "SUCCESS",
+      "paymentType": { "$ne": "DISBURSEMENT" },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$dateToString": {
+          "format": "%Y-%m",
+          "date": "$paymentDate",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "totalCollected": { "$sum": { "$ifNull": ["$amount", 0] } },
+      "paymentCount": { "$sum": 1 },
+      "emiCollected": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$paymentType", "EMI"] }, { "$ifNull": ["$amount", 0] }, 0]
+        }
+      },
+      "emiCount": {
+        "$sum": { "$cond": [{ "$eq": ["$paymentType", "EMI"] }, 1, 0] }
+      },
+      "foreclosureCollected": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$paymentType", "FORECLOSURE"] }, { "$ifNull": ["$amount", 0] }, 0]
+        }
+      },
+      "foreclosureCount": {
+        "$sum": { "$cond": [{ "$eq": ["$paymentType", "FORECLOSURE"] }, 1, 0] }
+      },
+      "partPaymentCollected": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$paymentType", "PART_PAYMENT"] }, { "$ifNull": ["$amount", 0] }, 0]
+        }
+      },
+      "partPaymentCount": {
+        "$sum": { "$cond": [{ "$eq": ["$paymentType", "PART_PAYMENT"] }, 1, 0] }
+      },
+      "repaymentCollected": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$paymentType", "REPAYMENT"] }, { "$ifNull": ["$amount", 0] }, 0]
+        }
+      },
+      "repaymentCount": {
+        "$sum": { "$cond": [{ "$eq": ["$paymentType", "REPAYMENT"] }, 1, 0] }
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "month": "$_id",
+      "totalCollected": 1,
+      "paymentCount": 1,
+      "emiCollected": 1,
+      "emiCount": 1,
+      "foreclosureCollected": 1,
+      "foreclosureCount": 1,
+      "partPaymentCollected": 1,
+      "partPaymentCount": 1,
+      "repaymentCollected": 1,
+      "repaymentCount": 1
+    }
+  },
+  { "$sort": { "month": 1 } }
+]
+
+
+
+Schedule-Level Due Analysis:loans
+[
+  { "$match": { "isDeleted": { "$ne": true } } },
+  {
+    "$addFields": {
+      "startDate": {
+        "$dateFromString": {
+          "dateString": { "$concat": [{{start_date}}, "T18:30:00.000+00:00"] }
+        }
+      },
+      "endDate": {
+        "$dateFromString": {
+          "dateString": { "$concat": [{{end_date}}, "T18:29:59.000+00:00"] }
+        }
+      }
+    }
+  },
+  { "$unwind": "$schedule" },
+  {
+    "$match": {
+      "$expr": {
+        "$and": [
+          { "$gte": ["$schedule.dueDate", "$startDate"] },
+          { "$lte": ["$schedule.dueDate", "$endDate"] }
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$schedule.status",
+      "count": { "$sum": 1 },
+      "totalDue": { "$sum": { "$ifNull": ["$schedule.totalDue", 0] } },
+      "totalPaid": {
+        "$sum": {
+          "$cond": [
+            { "$gt": [{ "$ifNull": ["$schedule.paidAmount", 0] }, 0] },
+            "$schedule.paidAmount",
+            0
+          ]
+        }
+      },
+      "totalBalance": { "$sum": { "$ifNull": ["$schedule.balance", 0] } },
+      "totalLateCharges": { "$sum": { "$ifNull": ["$schedule.lateCharges", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "scheduleStatus": "$_id",
+      "count": 1,
+      "totalDue": 1,
+      "totalPaid": 1,
+      "totalBalance": 1,
+      "totalLateCharges": 1,
+      "paidPct": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [
+                { "$divide": [
+                  "$totalPaid",
+                  { "$cond": [{ "$gt": ["$totalDue", 0] }, "$totalDue", 1] }
+                ]},
+                1000
+              ]},
+              { "$mod": [
+                { "$multiply": [
+                  { "$divide": [
+                    "$totalPaid",
+                    { "$cond": [{ "$gt": ["$totalDue", 0] }, "$totalDue", 1] }
+                  ]},
+                  1000
+                ]},
+                1
+              ]}
+            ]
+          },
+          10
+        ]
+      }
+    }
+  },
+  { "$sort": { "count": -1 } }
+]
+
+
+
+total disbursed:loans
+[
+  {
+    "$match": {
+      "disbursementStatus": "SUCCESS",
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "startDate": {
+        "$dateFromString": {
+          "dateString": { "$concat": [{{start_date}}, "T18:30:00.000+00:00"] }
+        }
+      },
+      "endDate": {
+        "$dateFromString": {
+          "dateString": { "$concat": [{{end_date}}, "T18:29:59.000+00:00"] }
+        }
+      }
+    }
+  },
+  {
+    "$match": {
+      "$expr": {
+        "$and": [
+          { "$gte": ["$disbursementDate", "$startDate"] },
+          { "$lte": ["$disbursementDate", "$endDate"] }
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "totalLoans": { "$sum": 1 },
+      "totalDisbursed": { "$sum": "$disbursementAmount" },
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "totalLoans": 1,
+      "totalDisbursed": 1,
+    }
+  }
+]
+
+
+
