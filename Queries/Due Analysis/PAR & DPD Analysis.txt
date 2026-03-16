@@ -1,0 +1,168 @@
+DPD Bucket with Full Outstanding Breakdown:loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$dpdBucket", "Not Set"] },
+      "loanCount": { "$sum": 1 },
+      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } },
+      "principalOutstanding": { "$sum": { "$ifNull": ["$principalOutstanding", 0] } },
+      "interestOutstanding": { "$sum": { "$ifNull": ["$interestOutstanding", 0] } },
+      "lateChargesPenalty": { "$sum": { "$ifNull": ["$lateChargesOutstanding", 0] } },
+      "lateChargesInterest": { "$sum": { "$ifNull": ["$lateChargeInterestOutstanding", 0] } },
+      "avgDPD": { "$avg": { "$ifNull": ["$dpd", 0] } },
+      "minDPD": { "$min": { "$ifNull": ["$dpd", 0] } },
+      "maxDPD": { "$max": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "dpdBucket": "$_id",
+      "loanCount": 1,
+      "totalOutstanding": 1,
+      "principalOutstanding": 1,
+      "interestOutstanding": 1,
+      "lateChargesPenalty": 1,
+      "lateChargesInterest": 1,
+      "totalLateCharges": { "$add": ["$lateChargesPenalty", "$lateChargesInterest"] },
+      "avgDPD": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": ["$avgDPD", 10] },
+              { "$mod": [{ "$multiply": ["$avgDPD", 10] }, 1] }
+            ]
+          },
+          10
+        ]
+      },
+      "minDPD": 1,
+      "maxDPD": 1
+    }
+  },
+  { "$sort": { "dpdBucket": 1 } }
+]
+
+
+
+Overdue Loans Detail with Payment History:loans
+[
+  {"$match": {"status": {"$in": ["OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$lookup": {"from": "customers", "localField": "customerId", "foreignField": "_id", "as": "customer"}},
+  {"$unwind": {"path": "$customer", "preserveNullAndEmptyArrays": true}},
+  {"$unwind": {"path": "$schedule", "preserveNullAndEmptyArrays": true}},
+  {"$project": {
+    "loanNumber": 1,
+    "customerName": "$customer.fullName",
+    "mobile": "$customer.mobile",
+    "principalAmount": 1,
+    "totalOutstanding": 1,
+    "principalOutstanding": 1,
+    "interestOutstanding": 1,
+    "lateChargesPenalty": {"$ifNull": ["$lateChargesOutstanding", 0]},
+    "lateChargesInterest": {"$ifNull": ["$lateChargeInterestOutstanding", 0]},
+    "dpd": 1,
+    "dpdBucket": 1,
+    "status": 1,
+    "dueDate": 1,
+    "tenure": 1,
+    "disbursementDate": 1,
+    "schedulePaidAmount": {"$max": [{"$ifNull": ["$schedule.paidAmount", 0]}, 0]},
+    "scheduleBalance": {"$ifNull": ["$schedule.balance", 0]},
+    "scheduleStatus": "$schedule.status",
+    "remindersSent": {"$ifNull": ["$reminderTracking.totalRemindersSent", 0]},
+    "lastReminderType": "$reminderTracking.lastReminderType"
+  }},
+  {"$sort": {"dpd": -1}},
+  {"$limit": 300}
+]
+
+
+
+PAR (Portfolio at Risk):loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } },
+      "totalLoans": { "$sum": 1 },
+      "currentLoans": { "$sum": { "$cond": [{ "$lte": [{ "$ifNull": ["$dpd", 0] }, 0] }, 1, 0] } },
+      "currentOutstanding": { "$sum": { "$cond": [{ "$lte": [{ "$ifNull": ["$dpd", 0] }, 0] }, { "$ifNull": ["$totalOutstanding", 0] }, 0] } },
+      "par1_count": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 1] }, 1, 0] } },
+      "par1_amt": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 1] }, { "$ifNull": ["$totalOutstanding", 0] }, 0] } },
+      "par31_count": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 31] }, 1, 0] } },
+      "par31_amt": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 31] }, { "$ifNull": ["$totalOutstanding", 0] }, 0] } },
+      "par61_count": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 61] }, 1, 0] } },
+      "par61_amt": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 61] }, { "$ifNull": ["$totalOutstanding", 0] }, 0] } },
+      "par91_count": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 91] }, 1, 0] } },
+      "par91_amt": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 91] }, { "$ifNull": ["$totalOutstanding", 0] }, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "totalOutstanding": 1,
+      "totalLoans": 1,
+      "currentLoans": 1,
+      "currentOutstanding": 1,
+      "par1_loans": "$par1_count",
+      "par1_amount": "$par1_amt",
+      "par1_pct": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$par1_amt", { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }] }, 10000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$par1_amt", { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }] }, 10000] }, 1] }
+          ]},
+          100
+        ]
+      },
+      "par31_loans": "$par31_count",
+      "par31_amount": "$par31_amt",
+      "par31_pct": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$par31_amt", { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }] }, 10000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$par31_amt", { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }] }, 10000] }, 1] }
+          ]},
+          100
+        ]
+      },
+      "par61_loans": "$par61_count",
+      "par61_amount": "$par61_amt",
+      "par61_pct": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$par61_amt", { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }] }, 10000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$par61_amt", { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }] }, 10000] }, 1] }
+          ]},
+          100
+        ]
+      },
+      "par91_loans": "$par91_count",
+      "par91_amount": "$par91_amt",
+      "par91_pct": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$par91_amt", { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }] }, 10000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$par91_amt", { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }] }, 10000] }, 1] }
+          ]},
+          100
+        ]
+      }
+    }
+  }
+]
+
+

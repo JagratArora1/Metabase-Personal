@@ -1,0 +1,193 @@
+has multiple things:Paymentlinks
+[
+  {
+    "$group": {
+      "_id": null,
+      "totalLinks": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" },
+      "totalPaid": { "$sum": { "$ifNull": ["$amountPaid", 0] } },
+      "paidLinks": { "$sum": { "$cond": [{ "$eq": ["$status", "PAID"] }, 1, 0] } },
+      "partiallyPaidLinks": { "$sum": { "$cond": [{ "$eq": ["$status", "PARTIALLY_PAID"] }, 1, 0] } },
+      "cancelledLinks": { "$sum": { "$cond": [{ "$eq": ["$status", "CANCELLED"] }, 1, 0] } },
+      "expiredLinks": { "$sum": { "$cond": [{ "$eq": ["$status", "EXPIRED"] }, 1, 0] } },
+      "createdLinks": { "$sum": { "$cond": [{ "$eq": ["$status", "CREATED"] }, 1, 0] } },
+      "linksWithPayments": { "$sum": { "$cond": [{ "$gt": [{ "$size": { "$ifNull": ["$payments", []] } }, 0] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "totalLinks": 1,
+      "totalAmount": 1,
+      "totalPaid": 1,
+      "paidLinks": 1,
+      "partiallyPaidLinks": 1,
+      "cancelledLinks": 1,
+      "expiredLinks": 1,
+      "createdLinks": 1,
+      "linksWithPayments": 1,
+      "collectionRate": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [
+                { "$divide": [
+                  "$totalPaid",
+                  { "$cond": [{ "$gt": ["$totalAmount", 0] }, "$totalAmount", 1] }
+                ]},
+                1000
+              ]},
+              { "$mod": [
+                { "$multiply": [
+                  { "$divide": [
+                    "$totalPaid",
+                    { "$cond": [{ "$gt": ["$totalAmount", 0] }, "$totalAmount", 1] }
+                  ]},
+                  1000
+                ]},
+                1
+              ]}
+            ]
+          },
+          10
+        ]
+      },
+      "conversionRate": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [
+                { "$divide": [
+                  { "$add": ["$paidLinks", "$partiallyPaidLinks"] },
+                  { "$cond": [{ "$gt": ["$totalLinks", 0] }, "$totalLinks", 1] }
+                ]},
+                1000
+              ]},
+              { "$mod": [
+                { "$multiply": [
+                  { "$divide": [
+                    { "$add": ["$paidLinks", "$partiallyPaidLinks"] },
+                    { "$cond": [{ "$gt": ["$totalLinks", 0] }, "$totalLinks", 1] }
+                  ]},
+                  1000
+                ]},
+                1
+              ]}
+            ]
+          },
+          10
+        ]
+      }
+    }
+  }
+]
+
+
+Expired Links That Had Partial Payments:Paymentlinks
+[
+  {
+    "$match": {
+      "status": "EXPIRED",
+      "amountPaid": { "$gt": 0 }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "paymentLinkId": 1,
+      "amount": 1,
+      "amountPaid": 1,
+      "remaining": { "$subtract": ["$amount", "$amountPaid"] },
+      "paidPct": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [
+                { "$divide": [
+                  "$amountPaid",
+                  { "$cond": [{ "$gt": ["$amount", 0] }, "$amount", 1] }
+                ]},
+                1000
+              ]},
+              { "$mod": [
+                { "$multiply": [
+                  { "$divide": [
+                    "$amountPaid",
+                    { "$cond": [{ "$gt": ["$amount", 0] }, "$amount", 1] }
+                  ]},
+                  1000
+                ]},
+                1
+              ]}
+            ]
+          },
+          10
+        ]
+      },
+      "expireBy": 1,
+      "createdAt": 1,
+      "paymentCount": { "$size": { "$ifNull": ["$payments", []] } }
+    }
+  },
+  { "$sort": { "remaining": -1 } }
+]
+
+
+
+Payment Link Status by Month:Paymentlinks
+[
+  {"$group": {
+    "_id": {
+      "month": {"$dateToString": {"format": "%Y-%m", "date": "$createdAt"}},
+      "status": "$status"
+    },
+    "count": {"$sum": 1},
+    "totalAmount": {"$sum": "$amount"},
+    "totalPaid": {"$sum": {"$ifNull": ["$amountPaid", 0]}}
+  }},
+  {"$project": {
+    "month": "$_id.month",
+    "status": "$_id.status",
+    "count": 1,
+    "totalAmount": 1,
+    "totalPaid": 1,
+    "_id": 0
+  }},
+  {"$sort": {"month": 1, "status": 1}}
+]
+
+
+
+Payment Links With Payments Attached (Webhook Success):Paymentlinks
+[
+  { "$match": { "payments.0": { "$exists": true } } },
+  {
+    "$project": {
+      "_id": 0,
+      "paymentLinkId": 1,
+      "status": 1,
+      "amount": 1,
+      "amountPaid": 1,
+      "paymentCount": { "$size": "$payments" },
+      "totalPaymentAmount": { "$sum": "$payments.amount" },
+      "paymentMethods": {
+        "$reduce": {
+          "input": "$payments.method",
+          "initialValue": "",
+          "in": {
+            "$cond": [
+              { "$eq": ["$$value", ""] },
+              "$$this",
+              { "$concat": ["$$value", ", ", "$$this"] }
+            ]
+          }
+        }
+      },
+      "lastPaymentDate": { "$arrayElemAt": ["$payments.paidAt", -1] },
+      "createdAt": 1,
+      "shortUrl": 1
+    }
+  },
+  { "$sort": { "lastPaymentDate": -1 } },
+  { "$limit": 100 }
+]

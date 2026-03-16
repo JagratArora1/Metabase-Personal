@@ -1,0 +1,39 @@
+Payin Status Summary:payins
+[
+  {
+    "$group": {
+      "_id": "$status",
+      "count": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" },
+      "avgAmount": { "$avg": "$amount" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "status": "$_id",
+      "count": 1,
+      "totalAmount": 1,
+      "avgAmount": {
+        "$subtract": ["$avgAmount", { "$mod": ["$avgAmount", 1] }]
+      }
+    }
+  },
+  { "$sort": { "count": -1 } }
+]
+
+
+Payment Proof Verification Pipeline:paymentproofs
+[
+  {"$group": {
+    "_id": "$status",
+    "count": {"$sum": 1}
+  }},
+  {"$project": {
+    "status": "$_id",
+    "count": 1,
+    "_id": 0
+  }},
+  {"$sort": {"count": -1}}
+]
+

@@ -1,0 +1,265 @@
+Income vs Loan Performance (Risk Matrix):loans
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true },
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$customerId",
+      "loans": {
+        "$push": {
+          "status": "$status",
+          "dpd": "$dpd",
+          "principalAmount": "$principalAmount"
+        }
+      }
+    }
+  },
+  {
+    "$lookup": {
+      "from": "customers",
+      "localField": "_id",
+      "foreignField": "_id",
+      "as": "c"
+    }
+  },
+  {
+    "$unwind": { "path": "$c", "preserveNullAndEmptyArrays": false }
+  },
+  {
+    "$match": { "c.monthlyIncome": { "$gt": 0 } }
+  },
+  {
+    "$unwind": "$loans"
+  },
+  {
+    "$addFields": {
+      "incomeBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lt": ["$c.monthlyIncome", 15000] }, "then": "A: <15K" },
+            { "case": { "$lt": ["$c.monthlyIncome", 25000] }, "then": "B: 15-25K" },
+            { "case": { "$lt": ["$c.monthlyIncome", 35000] }, "then": "C: 25-35K" },
+            { "case": { "$lt": ["$c.monthlyIncome", 50000] }, "then": "D: 35-50K" }
+          ],
+          "default": "E: 50K+"
+        }
+      },
+      "loanToIncome": {
+        "$divide": ["$loans.principalAmount", "$c.monthlyIncome"]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$incomeBucket",
+      "total": { "$sum": 1 },
+      "overdue": { "$sum": { "$cond": [{ "$in": ["$loans.status", ["OVERDUE", "NPA"]] }, 1, 0] } },
+      "closed": { "$sum": { "$cond": [{ "$eq": ["$loans.status", "CLOSED"] }, 1, 0] } },
+      "avgDPD": { "$avg": { "$ifNull": ["$loans.dpd", 0] } },
+      "avgLTI": { "$avg": "$loanToIncome" },
+      "avgLoanAmount": { "$avg": "$loans.principalAmount" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "incomeBucket": "$_id",
+      "total": 1,
+      "overdue": 1,
+      "overdueRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$overdue", { "$cond": [{ "$gt": ["$total", 0] }, "$total", 1] }] }, 1000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$overdue", { "$cond": [{ "$gt": ["$total", 0] }, "$total", 1] }] }, 1000] }, 1] }
+          ]},
+          10
+        ]
+      },
+      "closureRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$closed", { "$cond": [{ "$gt": ["$total", 0] }, "$total", 1] }] }, 1000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$closed", { "$cond": [{ "$gt": ["$total", 0] }, "$total", 1] }] }, 1000] }, 1] }
+          ]},
+          10
+        ]
+      },
+      "avgDPD": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": ["$avgDPD", 10] },
+            { "$mod": [{ "$multiply": ["$avgDPD", 10] }, 1] }
+          ]},
+          10
+        ]
+      },
+      "avgLTI": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": ["$avgLTI", 10000] },
+            { "$mod": [{ "$multiply": ["$avgLTI", 10000] }, 1] }
+          ]},
+          10000
+        ]
+      },
+      "avgLoanAmount": {
+        "$subtract": ["$avgLoanAmount", { "$mod": ["$avgLoanAmount", 1] }]
+      }
+    }
+  },
+  { "$sort": { "incomeBucket": 1 } }
+]
+
+
+
+
+Loan-to-Income Ratio Distribution:loans
+[
+  { "$match": { "isDeleted": { "$ne": true } } },
+  {
+    "$group": {
+      "_id": "$customerId",
+      "loans": { "$push": { "status": "$status", "dpd": "$dpd", "principalAmount": "$principalAmount" } }
+    }
+  },
+  { "$lookup": { "from": "customers", "localField": "_id", "foreignField": "_id", "as": "c" } },
+  { "$unwind": { "path": "$c", "preserveNullAndEmptyArrays": false } },
+  { "$match": { "c.monthlyIncome": { "$gt": 0 } } },
+  { "$unwind": "$loans" },
+  {
+    "$addFields": {
+      "ltiBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lt": [{ "$divide": ["$loans.principalAmount", "$c.monthlyIncome"] }, 0.2] }, "then": "A: <20% (Safe)" },
+            { "case": { "$lt": [{ "$divide": ["$loans.principalAmount", "$c.monthlyIncome"] }, 0.35] }, "then": "B: 20-35% (Moderate)" },
+            { "case": { "$lt": [{ "$divide": ["$loans.principalAmount", "$c.monthlyIncome"] }, 0.5] }, "then": "C: 35-50% (Stretched)" }
+          ],
+          "default": "D: 50%+ (High Risk)"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$ltiBucket",
+      "count": { "$sum": 1 },
+      "overdue": { "$sum": { "$cond": [{ "$in": ["$loans.status", ["OVERDUE", "NPA"]] }, 1, 0] } },
+      "avgDPD": { "$avg": { "$ifNull": ["$loans.dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "ltiBucket": "$_id",
+      "count": 1,
+      "overdueRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$overdue", { "$cond": [{ "$gt": ["$count", 0] }, "$count", 1] }] }, 1000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$overdue", { "$cond": [{ "$gt": ["$count", 0] }, "$count", 1] }] }, 1000] }, 1] }
+          ]}, 10
+        ]
+      },
+      "avgDPD": {
+        "$divide": [
+          { "$subtract": [{ "$multiply": ["$avgDPD", 10] }, { "$mod": [{ "$multiply": ["$avgDPD", 10] }, 1] }] },
+          10
+        ]
+      }
+    }
+  },
+  { "$sort": { "ltiBucket": 1 } }
+]
+
+
+
+
+Peak payment days:payments
+[
+  {
+    "$match": {
+      "status": "SUCCESS",
+      "paymentType": { "$ne": "DISBURSEMENT" }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$dayOfMonth": {
+          "date": "$paymentDate",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "paymentCount": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "dayOfMonth": "$_id",
+      "paymentCount": 1,
+      "totalAmount": 1
+    }
+  },
+  { "$sort": { "dayOfMonth": 1 } }
+]
+
+
+
+
+Salary Mode vs Loan Performance:loans
+[
+  { "$match": { "isDeleted": { "$ne": true } } },
+  {
+    "$group": {
+      "_id": "$customerId",
+      "loans": { "$push": { "status": "$status", "dpd": "$dpd", "principalAmount": "$principalAmount" } }
+    }
+  },
+  { "$lookup": { "from": "customers", "localField": "_id", "foreignField": "_id", "as": "c" } },
+  { "$unwind": { "path": "$c", "preserveNullAndEmptyArrays": false } },
+  { "$unwind": "$loans" },
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$c.salaryMode", "UNKNOWN"] },
+      "total": { "$sum": 1 },
+      "overdue": { "$sum": { "$cond": [{ "$in": ["$loans.status", ["OVERDUE", "NPA"]] }, 1, 0] } },
+      "avgDPD": { "$avg": { "$ifNull": ["$loans.dpd", 0] } },
+      "avgAmount": { "$avg": "$loans.principalAmount" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "salaryMode": "$_id",
+      "total": 1,
+      "overdue": 1,
+      "overdueRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$overdue", { "$cond": [{ "$gt": ["$total", 0] }, "$total", 1] }] }, 1000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$overdue", { "$cond": [{ "$gt": ["$total", 0] }, "$total", 1] }] }, 1000] }, 1] }
+          ]}, 10
+        ]
+      },
+      "avgDPD": {
+        "$divide": [
+          { "$subtract": [{ "$multiply": ["$avgDPD", 10] }, { "$mod": [{ "$multiply": ["$avgDPD", 10] }, 1] }] },
+          10
+        ]
+      },
+      "avgAmount": {
+        "$subtract": ["$avgAmount", { "$mod": ["$avgAmount", 1] }]
+      }
+    }
+  },
+  { "$sort": { "total": -1 } }
+]
+
+

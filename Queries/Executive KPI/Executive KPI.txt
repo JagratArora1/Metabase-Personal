@@ -1,0 +1,437 @@
+Application Pipeline Funnel:Applications
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}}
+]
+
+
+
+Applications Previous Month:Applications
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$createdAt"}},
+    "count": {"$sum": 1}
+  }},
+  {"$sort": {"_id": -1}},
+  {"$limit": 2},
+  {"$group": {
+    "_id": null,
+    "months": {"$push": {"month": "$_id", "count": "$count"}}
+  }},
+  {"$project": {
+    "currentMonth": {"$arrayElemAt": ["$months.count", 0]},
+    "previousMonth": {"$arrayElemAt": ["$months.count", 1]},
+    "growthPercent": {
+      "$multiply
+      ": [
+        {"$divide": [
+          {"$subtract": [{"$arrayElemAt": ["$months.count", 0]}, {"$arrayElemAt": ["$months.count", 1]}]},
+          {"$arrayElemAt": ["$months.count", 1]}
+        ]},
+        100
+      ]
+    }
+  }}
+]
+
+
+
+
+Applications This Month:Applications
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$createdAt"}},
+    "count": {"$sum": 1}
+  }},
+  {"$sort": {"_id": -1}},
+  {"$limit": 2},
+  {"$group": {
+    "_id": null,
+    "months": {"$push": {"month": "$_id", "count": "$count"}}
+  }},
+  {"$project": {
+    "currentMonth": {"$arrayElemAt": ["$months.count", 0]},
+    "previousMonth": {"$arrayElemAt": ["$months.count", 1]},
+    "growthPercent": {
+      "$multiply": [
+        {"$divide": [
+          {"$subtract": [{"$arrayElemAt": ["$months.count", 0]}, {"$arrayElemAt": ["$months.count", 1]}]},
+          {"$arrayElemAt": ["$months.count", 1]}
+        ]},
+        100
+      ]
+    }
+  }}
+]
+
+
+
+Collection Efficiency (This Month):loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "startDate": {
+        "$dateFromString": {
+          "dateString": { "$concat": [{{start_date}}, "T18:30:00.000+00:00"] }
+        }
+      },
+      "endDate": {
+        "$dateFromString": {
+          "dateString": { "$concat": [{{end_date}}, "T18:29:59.000+00:00"] }
+        }
+      }
+    }
+  },
+  {
+    "$match": {
+      "$expr": {
+        "$and": [
+          { "$gte": ["$dueDate", "$startDate"] },
+          { "$lte": ["$dueDate", "$endDate"] }
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "totalLoansCount": { "$sum": 1 },
+      "totalDueAmount": { "$sum": "$emiAmount" },
+      "totalPrincipalDue": { "$sum": "$principalAmount" },
+      "totalInterestDue": { "$sum": "$totalInterest" },
+      "totalLateChargesDue": { "$sum": "$lateCharges" },
+      "totalDue": { "$sum": "$totalRepayment" },
+      "totalOutstanding": { "$sum": "$totalOutstanding" },
+      "totalLateChargeInterest": { "$sum": "$lateChargeInterest" },
+      "totalOverdueLoans": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$status", "OVERDUE"] }, 1, 0]
+        }
+      },
+      "paid": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$status", "CLOSED"] },
+            { "$subtract": ["$totalRepayment", "$totalOutstanding"] },
+            0
+          ]
+        }
+      },
+      "partial": {
+        "$sum": {
+          "$cond": [
+            { "$and": [
+              { "$ne": ["$status", "CLOSED"] },
+              { "$gt": [{ "$subtract": ["$totalRepayment", "$totalOutstanding"] }, 0] }
+            ]},
+            { "$subtract": ["$totalRepayment", "$totalOutstanding"] },
+            0
+          ]
+        }
+      },
+      "pendingCount": {
+        "$sum": {
+          "$cond": [{ "$in": ["$status", ["ACTIVE", "OVERDUE", "NPA"]] }, 1, 0]
+        }
+      },
+      "paidCount": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$status", "CLOSED"] }, 1, 0]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "totalLoansCount": 1,
+      "totalDueAmount": 1,
+      "totalPrincipalDue": 1,
+      "totalInterestDue": 1,
+      "totalLateChargesDue": 1,
+      "totalDue": 1,
+      "totalOutstanding": 1,
+      "totalLateChargeInterest": 1,
+      "totalOverdueLoans": 1,
+      "totalCollected": { "$add": ["$paid", "$partial"] },
+      "pendingCount": 1,
+      "paidCount": 1,
+      "shortfall": {
+        "$subtract": [
+          "$totalDue",
+          { "$add": ["$paid", "$partial"] }
+        ]
+      },
+      "collectionRate": {
+        "$divide": [
+          {
+            "$floor": {
+              "$multiply": [
+                {
+                  "$divide": [
+                    { "$add": ["$paid", "$partial"] },
+                    { "$cond": [{ "$gt": ["$totalDue", 0] }, "$totalDue", 1] }
+                  ]
+                },
+                10000
+              ]
+            }
+          },
+          100
+        ]
+      }
+    }
+  }
+]
+
+
+
+Customer Acquisition Trend:customers
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$createdAt"}},
+    "newCustomers": {"$sum": 1}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"month": "$_id", "newCustomers": 1, "_id": 0}}
+]
+
+
+
+DPD Bucket Distribution:loans
+[
+  {"$match": {"status": {"$in": ["ACTIVE", "OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$ifNull": ["$dpdBucket", "Not Set"]},
+    "count": {"$sum": 1},
+    "outstanding": {"$sum": "$totalOutstanding"}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"dpdBucket": "$_id", "count": 1, "outstanding": 1, "_id": 0}}
+]
+
+
+
+Key Alerts Table:apimetrics
+[
+  {
+    "$group": {
+      "_id": "$serviceName",
+      "totalCalls": { "$sum": "$countTotal" },
+      "successCalls": { "$sum": "$countSuccess" },
+      "failedCalls": { "$sum": "$countFailure" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "serviceName": "$_id",
+      "totalCalls": 1,
+      "successCalls": 1,
+      "failedCalls": 1,
+      "successRate": {
+        "$cond": [
+          { "$gt": ["$totalCalls", 0] },
+          {
+            "$divide": [
+              { "$subtract": [
+                { "$multiply": [{ "$divide": ["$successCalls", "$totalCalls"] }, 10000] },
+                { "$mod": [{ "$multiply": [{ "$divide": ["$successCalls", "$totalCalls"] }, 10000] }, 1] }
+              ]},
+              100
+            ]
+          },
+          0
+        ]
+      },
+      "failureRate": {
+        "$cond": [
+          { "$gt": ["$totalCalls", 0] },
+          {
+            "$divide": [
+              { "$subtract": [
+                { "$multiply": [{ "$divide": ["$failedCalls", "$totalCalls"] }, 10000] },
+                { "$mod": [{ "$multiply": [{ "$divide": ["$failedCalls", "$totalCalls"] }, 10000] }, 1] }
+              ]},
+              100
+            ]
+          },
+          0
+        ]
+      }
+    }
+  },
+  { "$sort": { "totalCalls": -1 } }
+]
+
+
+
+
+Loan Status Distribution:loans
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]
+
+
+
+MoM Application Growth:Applications
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$createdAt"}},
+    "count": {"$sum": 1}
+  }},
+  {"$sort": {"_id": -1}},
+  {"$limit": 2},
+  {"$group": {
+    "_id": null,
+    "months": {"$push": {"month": "$_id", "count": "$count"}}
+  }},
+  {"$project": {
+    "currentMonth": {"$arrayElemAt": ["$months.count", 0]},
+    "previousMonth": {"$arrayElemAt": ["$months.count", 1]},
+    "growthPercent": {
+      "$multiply": [
+        {"$divide": [
+          {"$subtract": [{"$arrayElemAt": ["$months.count", 0]}, {"$arrayElemAt": ["$months.count", 1]}]},
+          {"$arrayElemAt": ["$months.count", 1]}
+        ]},
+        100
+      ]
+    }
+  }}
+]
+
+
+
+
+Monthly Collection Trend:payments
+[
+  {"$match": {
+    "status": "SUCCESS",
+    "paymentType": {"$in": ["EMI", "PART_PAYMENT", "FORECLOSURE", "SETTLEMENT", "LATE_CHARGES"]}
+  }},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$paymentDate"}},
+    "totalCollected": {"$sum": "$amount"},
+    "paymentCount": {"$sum": 1}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"month": "$_id", "totalCollected": 1, "paymentCount": 1, "_id": 0}}
+]
+
+
+
+Monthly Disbursement Trend:loans
+[
+  {"$match": {"disbursementDate": {"$exists": true}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$disbursementDate"}},
+    "totalDisbursed": {"$sum": "$disbursementAmount"},
+    "loanCount": {"$sum": 1}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"month": "$_id", "totalDisbursed": 1, "loanCount": 1, "_id": 0}}
+]
+
+
+
+NPA Percentage:loans
+[
+  {"$match": {"status": {"$in": ["ACTIVE", "OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": null,
+    "totalOutstanding": {"$sum": "$totalOutstanding"},
+    "npaOutstanding": {"$sum": {"$cond": [{"$eq": ["$status", "NPA"]}, "$totalOutstanding", 0]}}
+  }},
+  {"$project": {
+    "npaPercent": {"$cond": [
+      {"$gt": ["$totalOutstanding", 0]},
+      {"$multiply": [{"$divide": ["$npaOutstanding", "$totalOutstanding"]}, 100]},
+      0
+    ]}
+  }}
+]
+
+
+
+Revenue Breakdown by Month (with Allocation):payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": {"$ne": "DISBURSEMENT"}}},
+  {"$group": {
+    "_id": {
+      "month": {"$dateToString": {"format": "%Y-%m", "date": "$paymentDate"}},
+      "type": "$paymentType"
+    },
+    "totalAmount": {"$sum": "$amount"},
+    "count": {"$sum": 1},
+    "principalAlloc": {"$sum": {"$ifNull": ["$allocation.principal", 0]}},
+    "interestAlloc": {"$sum": {"$ifNull": ["$allocation.interest", 0]}},
+    "lateChargesAlloc": {"$sum": {"$ifNull": ["$allocation.lateCharges", 0]}}
+  }},
+  {"$sort": {"_id.month": -1, "totalAmount": -1}},
+  {"$project": {
+    "month": "$_id.month",
+    "paymentType": "$_id.type",
+    "totalAmount": 1,
+    "count": 1,
+    "principalAlloc": 1,
+    "interestAlloc": 1,
+    "lateChargesAlloc": 1,
+    "_id": 0
+  }}
+]
+
+
+
+Total Active Loans Count:loans
+[
+  {"$match": {"status": {"$in": ["ACTIVE", "OVERDUE"]}, "isDeleted": {"$ne": true}}},
+  {"$count": "activeLoanCount"}
+]
+
+
+total aum:loans
+[
+  {
+    "$match": {
+      "isDeleted": { $ne: true },
+      "disbursementStatus": "SUCCESS"
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "totalAUM": {
+        "$sum": "$principalAmount"
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "totalAUM": 1
+    }
+  }
+]
+
+
+
+Total Outstanding:loans
+[
+  {"$match": {"status": {"$in": ["ACTIVE", "OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$group": {"_id": null, "totalOutstanding": {"$sum": "$totalOutstanding"}}}
+]

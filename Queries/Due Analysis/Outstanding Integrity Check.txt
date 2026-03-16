@@ -1,0 +1,84 @@
+Loans with totalOutstanding Mismatch (Data Quality):loans
+[
+  {"$match": {"status": {"$in": ["ACTIVE", "OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$addFields": {
+    "calculatedTotal": {"$add": [
+      {"$ifNull": ["$principalOutstanding", 0]},
+      {"$ifNull": ["$interestOutstanding", 0]},
+      {"$ifNull": ["$lateChargesOutstanding", 0]},
+      {"$ifNull": ["$lateChargeInterestOutstanding", 0]}
+    ]}
+  }},
+  {"$addFields": {
+    "diff": {"$abs": {"$subtract": ["$calculatedTotal", {"$ifNull": ["$totalOutstanding", 0]}]}}
+  }},
+  {"$match": {"diff": {"$gt": 1}}},
+  {"$project": {
+    "loanNumber": 1,
+    "status": 1,
+    "dpd": 1,
+    "principalOutstanding": 1,
+    "interestOutstanding": 1,
+    "lateChargesOutstanding": 1,
+    "lateChargeInterestOutstanding": 1,
+    "totalOutstanding": 1,
+    "calculatedTotal": 1,
+    "diff": 1,
+    "_id": 0
+  }},
+  {"$sort": {"diff": -1}},
+  {"$limit": 50}
+]
+
+
+
+
+Negative Paid Amounts in Schedule (Bug Tracker):loans
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$unwind": "$schedule"},
+  {"$match": {"schedule.paidAmount": {"$lt": 0}}},
+  {"$project": {
+    "loanNumber": 1,
+    "status": 1,
+    "dpd": 1,
+    "dpdBucket": 1,
+    "schedulePaidAmount": "$schedule.paidAmount",
+    "scheduleTotalDue": "$schedule.totalDue",
+    "scheduleBalance": "$schedule.balance",
+    "scheduleStatus": "$schedule.status",
+    "scheduleDueDate": "$schedule.dueDate",
+    "_id": 0
+  }},
+  {"$sort": {"schedulePaidAmount": 1}},
+  {"$limit": 50}
+]
+
+
+
+Schedule vs Loan Outstanding Mismatch:loans
+[
+  {"$match": {"status": {"$in": ["ACTIVE", "OVERDUE"]}, "isDeleted": {"$ne": true}}},
+  {"$unwind": {"path": "$schedule", "preserveNullAndEmptyArrays": true}},
+  {"$addFields": {
+    "scheduleVsLoanDiff": {"$abs": {"$subtract": [
+      {"$ifNull": ["$schedule.balance", 0]},
+      {"$ifNull": ["$totalOutstanding", 0]}
+    ]}}
+  }},
+  {"$match": {"scheduleVsLoanDiff": {"$gt": 100}}},
+  {"$project": {
+    "loanNumber": 1,
+    "status": 1,
+    "dpd": 1,
+    "totalOutstanding": 1,
+    "scheduleBalance": "$schedule.balance",
+    "scheduleTotalDue": "$schedule.totalDue",
+    "schedulePaidAmount": "$schedule.paidAmount",
+    "scheduleStatus": "$schedule.status",
+    "diff": "$scheduleVsLoanDiff",
+    "_id": 0
+  }},
+  {"$sort": {"diff": -1}},
+  {"$limit": 50}
+]

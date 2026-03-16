@@ -1,0 +1,129 @@
+Daily Collection Trend by Payment Type:payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": {"$ne": "DISBURSEMENT"}}},
+  {"$group": {
+    "_id": {
+      "date": {"$dateToString": {"format": "%Y-%m-%d", "date": "$paymentDate"}},
+      "type": "$paymentType"
+    },
+    "amount": {"$sum": "$amount"},
+    "count": {"$sum": 1}
+  }},
+  {"$project": {
+    "date": "$_id.date",
+    "paymentType": "$_id.type",
+    "amount": 1,
+    "count": 1,
+    "_id": 0
+  }},
+  {"$sort": {"date": 1}}
+]
+
+
+Payment Allocation Breakdown by Type:payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": {"$ne": "DISBURSEMENT"}}},
+  {"$group": {
+    "_id": "$paymentType",
+    "count": {"$sum": 1},
+    "totalAmount": {"$sum": "$amount"},
+    "principalAlloc": {"$sum": {"$ifNull": ["$allocation.principal", 0]}},
+    "interestAlloc": {"$sum": {"$ifNull": ["$allocation.interest", 0]}},
+    "lateChargesAlloc": {"$sum": {"$ifNull": ["$allocation.lateCharges", 0]}},
+    "bounceChargesAlloc": {"$sum": {"$ifNull": ["$allocation.bounceCharges", 0]}}
+  }},
+  {"$project": {
+    "paymentType": "$_id",
+    "count": 1,
+    "totalAmount": 1,
+    "principalAlloc": 1,
+    "interestAlloc": 1,
+    "lateChargesAlloc": 1,
+    "bounceChargesAlloc": 1,
+    "unallocated": {"$subtract": ["$totalAmount", {"$add": ["$principalAlloc", "$interestAlloc", "$lateChargesAlloc", "$bounceChargesAlloc"]}]},
+    "_id": 0
+  }},
+  {"$sort": {"totalAmount": -1}}
+]
+
+
+Payment Mode Analysis By Amount/Count:payments
+[
+  {
+    "$match": {
+      "status": "SUCCESS",
+      "paymentType": { "$ne": "DISBURSEMENT" }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$paymentMode", "UNKNOWN"] },
+      "count": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" },
+      "avgAmount": { "$avg": "$amount" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "paymentMode": "$_id",
+      "count": 1,
+      "totalAmount": 1,
+      "avgAmount": {
+        "$subtract": [
+          "$avgAmount",
+          { "$mod": ["$avgAmount", 1] }
+        ]
+      }
+    }
+  },
+  { "$sort": { "totalAmount": -1 } }
+]
+
+
+Payment Source Tracking By Amount/Count:payments
+[
+  {
+    "$match": {
+      "status": "SUCCESS",
+      "paymentType": { "$ne": "DISBURSEMENT" }
+    }
+  },
+  {
+    "$addFields": {
+      "paymentSource": {
+        "$switch": {
+          "branches": [
+            { "case": { "$ne": [{ "$ifNull": ["$source", null] }, null] }, "then": "$source" },
+            { "case": { "$ne": [{ "$ifNull": ["$razorpayPaymentId", null] }, null] }, "then": "RAZORPAY_DIRECT" },
+            { "case": { "$ne": [{ "$ifNull": ["$recordedBy", null] }, null] }, "then": "MANUAL_RECORDED" }
+          ],
+          "default": "OTHER"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$paymentSource",
+      "count": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" },
+      "avgAmount": { "$avg": "$amount" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "source": "$_id",
+      "count": 1,
+      "totalAmount": 1,
+      "avgAmount": {
+        "$subtract": [
+          "$avgAmount",
+          { "$mod": ["$avgAmount", 1] }
+        ]
+      }
+    }
+  },
+  { "$sort": { "totalAmount": -1 } }
+]

@@ -1,0 +1,55 @@
+loans
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$lookup": {
+      "from": "customers",
+      "localField": "customerId",
+      "foreignField": "_id",
+      "as": "c"
+    }
+  },
+  {
+    "$unwind": { "path": "$c", "preserveNullAndEmptyArrays": true }
+  },
+  {
+    "$match": {
+      "c.state": {{state}}
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "loanNumber": 1,
+      "status": 1,
+      "dpd": 1,
+      "dpdBucket": 1,
+      "disbursementAmount": 1,
+      "disbursementDate": 1,
+      "totalRepayment": 1,
+      "totalOutstanding": 1,
+      "principalOutstanding": 1,
+      "interestOutstanding": 1,
+      "lateChargesOutstanding": 1,
+      "emiAmount": 1,
+      "tenure": 1,
+      "interestRate": 1,
+      "maturityDate": 1,
+      "nextDueDate": 1,
+      "customerName": "$c.fullName",
+      "customerMobile": "$c.mobile",
+      "customerState": "$c.state",
+      "employmentType": "$c.employmentType",
+      "monthlyIncome": "$c.monthlyIncome",
+      "cibilScore": "$c.cibilScore",
+      "riskCategory": "$c.riskCategory"
+    }
+  },
+  {
+    "$sort": { "dpd": -1 }
+  }
+]

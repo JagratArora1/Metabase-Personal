@@ -1,0 +1,144 @@
+Loans With Multiple Payments (Payment Frequency):payments
+[
+  {
+    "$match": {
+      "status": "SUCCESS",
+      "paymentType": { "$ne": "DISBURSEMENT" },
+      "loanId": { "$exists": true, "$ne": null }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$loanId",
+      "paymentCount": { "$sum": 1 },
+      "totalPaid": { "$sum": "$amount" },
+      "paymentTypes": { "$addToSet": "$paymentType" },
+      "firstPayment": { "$min": "$paymentDate" },
+      "lastPayment": { "$max": "$paymentDate" }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$paymentCount",
+      "loanCount": { "$sum": 1 },
+      "avgTotalPaid": { "$avg": "$totalPaid" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "paymentsPerLoan": "$_id",
+      "loanCount": 1,
+      "avgTotalPaid": {
+        "$subtract": [
+          "$avgTotalPaid",
+          { "$mod": ["$avgTotalPaid", 1] }
+        ]
+      }
+    }
+  },
+  { "$sort": { "paymentsPerLoan": 1 } }
+]
+
+
+
+Partially Paid Schedule Items (Loan Level):loans
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$unwind": "$schedule"},
+  {"$match": {"schedule.status": "PARTIALLY_PAID"}},
+  {"$lookup": {"from": "customers", "localField": "customerId", "foreignField": "_id", "as": "customer"}},
+  {"$unwind": {"path": "$customer", "preserveNullAndEmptyArrays": true}},
+  {"$project": {
+    "loanNumber": 1,
+    "customerName": "$customer.fullName",
+    "mobile": "$customer.mobile",
+    "status": 1,
+    "dpd": 1,
+    "dpdBucket": 1,
+    "scheduleDueDate": "$schedule.dueDate",
+    "scheduleTotalDue": "$schedule.totalDue",
+    "schedulePaidAmount": "$schedule.paidAmount",
+    "scheduleBalance": "$schedule.balance",
+    "scheduleLateCharges": "$schedule.lateCharges",
+    "remainingToPay": {"$subtract": ["$schedule.totalDue", {"$max": ["$schedule.paidAmount", 0]}]},
+    "_id": 0
+  }},
+  {"$sort": {"remainingToPay": -1}},
+  {"$limit": 100}
+]
+
+
+
+Partial Payment Summary:payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": "PART_PAYMENT"}},
+  {"$group": {
+    "_id": null,
+    "totalPartPayments": {"$sum": 1},
+    "totalAmount": {"$sum": "$amount"},
+    "avgAmount": {"$avg": "$amount"},
+    "minAmount": {"$min": "$amount"},
+    "maxAmount": {"$max": "$amount"},
+    "principalRecovered": {"$sum": {"$ifNull": ["$allocation.principal", 0]}},
+    "interestRecovered": {"$sum": {"$ifNull": ["$allocation.interest", 0]}}
+  }},
+  {"$project": {"_id": 0}}
+]
+
+
+
+Payment Link Partial Payment Tracking:Paymentlinks
+[
+  {
+    "$match": { "status": "PARTIALLY_PAID" }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "paymentLinkId": 1,
+      "shortUrl": 1,
+      "loanId": 1,
+      "amount": 1,
+      "amountPaid": 1,
+      "remaining": { "$subtract": ["$amount", "$amountPaid"] },
+      "paidPct": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [
+                { "$divide": [
+                  "$amountPaid",
+                  { "$cond": [{ "$gt": ["$amount", 0] }, "$amount", 1] }
+                ]},
+                1000
+              ]},
+              { "$mod": [
+                { "$multiply": [
+                  { "$divide": [
+                    "$amountPaid",
+                    { "$cond": [{ "$gt": ["$amount", 0] }, "$amount", 1] }
+                  ]},
+                  1000
+                ]},
+                1
+              ]}
+            ]
+          },
+          10
+        ]
+      },
+      "acceptPartial": 1,
+      "minAmountDue": 1,
+      "paymentCount": { "$size": { "$ifNull": ["$payments", []] } },
+      "lastPaymentDate": { "$arrayElemAt": ["$payments.paidAt", -1] },
+      "lastPaymentAmount": { "$arrayElemAt": ["$payments.amount", -1] },
+      "lastPaymentMethod": { "$arrayElemAt": ["$payments.method", -1] },
+      "createdAt": 1
+    }
+  },
+  { "$sort": { "remaining": -1 } }
+]
+
+
+

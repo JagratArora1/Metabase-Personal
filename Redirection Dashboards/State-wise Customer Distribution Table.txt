@@ -1,0 +1,32 @@
+customers
+
+[
+  {
+    "$match": {
+      "state": {{state}},
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "customerUniqueId": 1,
+      "fullName": 1,
+      "mobile": 1,
+      "email": 1,
+      "state": 1,
+      "gender": 1,
+      "monthlyIncome": 1,
+      "cibilScore": 1,
+      "kycStatus": 1,
+      "riskCategory": 1,
+      "requestedLoanAmount": 1,
+      "companyName":1,
+      "dateOfBirth":1,
+      "monthlyIncome":1,
+      "panCard":1,
+      "aadhaarNumber":1,
+    }
+  },
+  { "$sort": { "createdAt": -1 } }
+]

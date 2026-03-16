@@ -1,0 +1,300 @@
+Closed Loans with Remaining Outstanding (Data Issue Tracker):loans
+[
+  {"$match": {"status": "CLOSED", "isDeleted": {"$ne": true}, "$or": [
+    {"totalOutstanding": {"$gt": 100}},
+    {"lateChargesOutstanding": {"$gt": 0}},
+    {"lateChargeInterestOutstanding": {"$gt": 0}}
+  ]}},
+  {"$project": {
+    "loanNumber": 1,
+    "totalOutstanding": 1,
+    "principalOutstanding": 1,
+    "interestOutstanding": 1,
+    "lateChargesOutstanding": 1,
+    "lateChargeInterestOutstanding": 1,
+    "dpd": 1,
+    "disbursementAmount": 1,
+    "_id": 0
+  }},
+  {"$sort": {"totalOutstanding": -1}},
+  {"$limit": 50}
+]
+
+
+Closure Analysis from Loan Status By Avg Days To Close:loans
+[
+  {
+    "$match": {
+      "status": "CLOSED",
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "daysToClose": {
+        "$divide": [
+          { "$subtract": ["$updatedAt", "$disbursementDate"] },
+          86400000
+        ]
+      },
+      "closedBeforeMaturity": { "$lt": ["$updatedAt", "$maturityDate"] },
+      "daysEarlyOrLate": {
+        "$divide": [
+          { "$subtract": ["$maturityDate", "$updatedAt"] },
+          86400000
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$closedBeforeMaturity", true] }, "then": "Early Closure" },
+            { "case": { "$gt": [{ "$ifNull": ["$dpd", 0] }, 0] }, "then": "Late Closure (Was Overdue)" }
+          ],
+          "default": "On-Time Closure"
+        }
+      },
+      "count": { "$sum": 1 },
+      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
+      "avgDaysToClose": { "$avg": "$daysToClose" },
+      "avgDPDAtClosure": { "$avg": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "closureType": "$_id",
+      "loanCount": "$count",
+      "totalDisbursed": {
+        "$subtract": ["$totalDisbursed", { "$mod": ["$totalDisbursed", 1] }]
+      },
+      "avgDaysToClose": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [{ "$ifNull": ["$avgDaysToClose", 0] }, 10] },
+              { "$mod": [{ "$multiply": [{ "$ifNull": ["$avgDaysToClose", 0] }, 10] }, 1] }
+            ]
+          },
+          10
+        ]
+      },
+      "avgDPDAtClosure": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": ["$avgDPDAtClosure", 10] },
+              { "$mod": [{ "$multiply": ["$avgDPDAtClosure", 10] }, 1] }
+            ]
+          },
+          10
+        ]
+      }
+    }
+  },
+  { "$sort": { "loanCount": -1 } }
+]
+
+
+Closure Analysis from Loan Status By Loan Count:loans
+[
+  {
+    "$match": {
+      "status": "CLOSED",
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "daysToClose": {
+        "$divide": [
+          { "$subtract": ["$updatedAt", "$disbursementDate"] },
+          86400000
+        ]
+      },
+      "closedBeforeMaturity": { "$lt": ["$updatedAt", "$maturityDate"] },
+      "daysEarlyOrLate": {
+        "$divide": [
+          { "$subtract": ["$maturityDate", "$updatedAt"] },
+          86400000
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$closedBeforeMaturity", true] }, "then": "Early Closure" },
+            { "case": { "$gt": [{ "$ifNull": ["$dpd", 0] }, 0] }, "then": "Late Closure (Was Overdue)" }
+          ],
+          "default": "On-Time Closure"
+        }
+      },
+      "count": { "$sum": 1 },
+      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
+      "avgDaysToClose": { "$avg": "$daysToClose" },
+      "avgDPDAtClosure": { "$avg": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "closureType": "$_id",
+      "loanCount": "$count",
+      "totalDisbursed": {
+        "$subtract": ["$totalDisbursed", { "$mod": ["$totalDisbursed", 1] }]
+      },
+      "avgDaysToClose": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [{ "$ifNull": ["$avgDaysToClose", 0] }, 10] },
+              { "$mod": [{ "$multiply": [{ "$ifNull": ["$avgDaysToClose", 0] }, 10] }, 1] }
+            ]
+          },
+          10
+        ]
+      },
+      "avgDPDAtClosure": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": ["$avgDPDAtClosure", 10] },
+              { "$mod": [{ "$multiply": ["$avgDPDAtClosure", 10] }, 1] }
+            ]
+          },
+          10
+        ]
+      }
+    }
+  },
+  { "$sort": { "loanCount": -1 } }
+]
+
+
+
+Closure Analysis from Loan Status By Total Disbursed:loans
+[
+  {
+    "$match": {
+      "status": "CLOSED",
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "daysToClose": {
+        "$divide": [
+          { "$subtract": ["$updatedAt", "$disbursementDate"] },
+          86400000
+        ]
+      },
+      "closedBeforeMaturity": { "$lt": ["$updatedAt", "$maturityDate"] },
+      "daysEarlyOrLate": {
+        "$divide": [
+          { "$subtract": ["$maturityDate", "$updatedAt"] },
+          86400000
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$closedBeforeMaturity", true] }, "then": "Early Closure" },
+            { "case": { "$gt": [{ "$ifNull": ["$dpd", 0] }, 0] }, "then": "Late Closure (Was Overdue)" }
+          ],
+          "default": "On-Time Closure"
+        }
+      },
+      "count": { "$sum": 1 },
+      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
+      "avgDaysToClose": { "$avg": "$daysToClose" },
+      "avgDPDAtClosure": { "$avg": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "closureType": "$_id",
+      "loanCount": "$count",
+      "totalDisbursed": {
+        "$subtract": ["$totalDisbursed", { "$mod": ["$totalDisbursed", 1] }]
+      },
+      "avgDaysToClose": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [{ "$ifNull": ["$avgDaysToClose", 0] }, 10] },
+              { "$mod": [{ "$multiply": [{ "$ifNull": ["$avgDaysToClose", 0] }, 10] }, 1] }
+            ]
+          },
+          10
+        ]
+      },
+      "avgDPDAtClosure": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": ["$avgDPDAtClosure", 10] },
+              { "$mod": [{ "$multiply": ["$avgDPDAtClosure", 10] }, 1] }
+            ]
+          },
+          10
+        ]
+      }
+    }
+  },
+  { "$sort": { "loanCount": -1 } }
+]
+
+
+
+Foreclosure Analysis from Payment Records:payments
+[
+  {
+    "$match": {
+      "status": "SUCCESS",
+      "paymentType": "FORECLOSURE"
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$dateToString": {
+          "format": "%Y-%m",
+          "date": "$paymentDate",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "foreclosureCount": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" },
+      "avgAmount": { "$avg": "$amount" },
+      "principalRecovered": { "$sum": { "$ifNull": ["$allocation.principal", 0] } },
+      "interestRecovered": { "$sum": { "$ifNull": ["$allocation.interest", 0] } },
+      "lateChargesRecovered": { "$sum": { "$ifNull": ["$allocation.lateCharges", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "month": "$_id",
+      "foreclosureCount": 1,
+      "totalAmount": 1,
+      "avgAmount": {
+        "$subtract": ["$avgAmount", { "$mod": ["$avgAmount", 1] }]
+      },
+      "principalRecovered": 1,
+      "interestRecovered": 1,
+      "lateChargesRecovered": 1
+    }
+  },
+  { "$sort": { "month": -1 } }
+]

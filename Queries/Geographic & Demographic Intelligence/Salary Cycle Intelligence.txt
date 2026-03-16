@@ -1,0 +1,102 @@
+Day-of-Month Payment Pattern (Salary Cycle Detection):payments
+[
+  { "$match": { "status": "SUCCESS", "paymentType": { "$ne": "DISBURSEMENT" } } },
+  {
+    "$group": {
+      "_id": { "$dayOfMonth": { "date": "$paymentDate", "timezone": "Asia/Kolkata" } },
+      "count": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" },
+      "avgAmount": { "$avg": "$amount" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "dayOfMonth": "$_id",
+      "count": 1,
+      "totalAmount": 1,
+      "avgAmount": { "$subtract": ["$avgAmount", { "$mod": ["$avgAmount", 1] }] }
+    }
+  },
+  { "$sort": { "dayOfMonth": 1 } }
+]
+
+
+
+
+Highest registration day:customers
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$dayOfMonth": {
+          "date": "$createdAt",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "registrationCount": { "$sum": 1 }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "dayOfMonth": "$_id",
+      "registrationCount": 1
+    }
+  },
+  { "$sort": { "dayOfMonth": 1 } }
+]
+
+
+
+Monthly Income Distribution of Borrowers:customers
+[
+  { "$match": { "monthlyIncome": { "$gt": 0, "$lt": 200000 }, "isDeleted": { "$ne": true } } },
+  {
+    "$addFields": {
+      "incomeBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lt": ["$monthlyIncome", 15000] }, "then": "A: <15K" },
+            { "case": { "$lt": ["$monthlyIncome", 20000] }, "then": "B: 15-20K" },
+            { "case": { "$lt": ["$monthlyIncome", 25000] }, "then": "C: 20-25K" },
+            { "case": { "$lt": ["$monthlyIncome", 30000] }, "then": "D: 25-30K" },
+            { "case": { "$lt": ["$monthlyIncome", 40000] }, "then": "E: 30-40K" },
+            { "case": { "$lt": ["$monthlyIncome", 50000] }, "then": "F: 40-50K" },
+            { "case": { "$lt": ["$monthlyIncome", 75000] }, "then": "G: 50-75K" }
+          ],
+          "default": "H: 75K+"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$incomeBucket",
+      "count": { "$sum": 1 },
+      "avgIncome": { "$avg": "$monthlyIncome" },
+      "avgCibil": {
+        "$avg": {
+          "$cond": [{ "$gt": [{ "$ifNull": ["$cibilScore", 0] }, 0] }, "$cibilScore", null]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "incomeBucket": "$_id",
+      "count": 1,
+      "avgIncome": { "$subtract": [{ "$ifNull": ["$avgIncome", 0] }, { "$mod": [{ "$ifNull": ["$avgIncome", 0] }, 1] }] },
+      "avgCibil": { "$subtract": [{ "$ifNull": ["$avgCibil", 0] }, { "$mod": [{ "$ifNull": ["$avgCibil", 0] }, 1] }] }
+    }
+  },
+  { "$sort": { "incomeBucket": 1 } }
+]
+
+

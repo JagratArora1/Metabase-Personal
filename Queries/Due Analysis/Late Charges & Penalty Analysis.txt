@@ -1,0 +1,174 @@
+Late Charges Accrued:loans
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": null,
+    "totalPenaltyAccrued": {"$sum": {"$ifNull": ["$lateChargesOutstanding", 0]}},
+    "totalLateInterestAccrued": {"$sum": {"$ifNull": ["$lateChargeInterestOutstanding", 0]}},
+    "totalLateChargeInterest": {"$sum": {"$ifNull": ["$lateChargeInterest", 0]}},
+    "loansWithPenalty": {"$sum": {"$cond": [{"$gt": [{"$ifNull": ["$lateChargesOutstanding", 0]}, 0]}, 1, 0]}},
+    "loansWithLateInterest": {"$sum": {"$cond": [{"$gt": [{"$ifNull": ["$lateChargeInterestOutstanding", 0]}, 0]}, 1, 0]}}
+  }},
+  {"$project": {
+    "_id": 0,
+    "totalLateChargesAccrued": {"$add": ["$totalPenaltyAccrued", "$totalLateInterestAccrued"]},
+    "totalPenaltyAccrued": 1,
+    "totalLateInterestAccrued": 1,
+    "totalLateChargeInterest": 1,
+    "loansWithPenalty": 1,
+    "loansWithLateInterest": 1
+  }}
+]
+
+
+
+Late Charges Complete Breakdown by DPD Bucket:loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$dpdBucket", "Not Set"] },
+      "count": { "$sum": 1 },
+      "totalPenalty": { "$sum": { "$ifNull": ["$lateChargesOutstanding", 0] } },
+      "totalLateInterest": { "$sum": { "$ifNull": ["$lateChargeInterestOutstanding", 0] } },
+      "totalLateChargesCombined": {
+        "$sum": { "$add": [
+          { "$ifNull": ["$lateChargesOutstanding", 0] },
+          { "$ifNull": ["$lateChargeInterestOutstanding", 0] }
+        ]}
+      },
+      "avgPenalty": { "$avg": { "$ifNull": ["$lateChargesOutstanding", 0] } },
+      "avgLateInterest": { "$avg": { "$ifNull": ["$lateChargeInterestOutstanding", 0] } },
+      "avgDPD": { "$avg": { "$ifNull": ["$dpd", 0] } },
+      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "dpdBucket": "$_id",
+      "count": 1,
+      "totalPenalty_50perDay": "$totalPenalty",
+      "totalLateInterest": 1,
+      "totalLateChargesCombined": 1,
+      "avgPenaltyPerLoan": {
+        "$subtract": ["$avgPenalty", { "$mod": ["$avgPenalty", 1] }]
+      },
+      "avgLateInterestPerLoan": {
+        "$subtract": ["$avgLateInterest", { "$mod": ["$avgLateInterest", 1] }]
+      },
+      "lateChargesAsPctOfOutstanding": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [
+                { "$divide": [
+                  "$totalLateChargesCombined",
+                  { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }
+                ]},
+                1000
+              ]},
+              { "$mod": [
+                { "$multiply": [
+                  { "$divide": [
+                    "$totalLateChargesCombined",
+                    { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }
+                  ]},
+                  1000
+                ]},
+                1
+              ]}
+            ]
+          },
+          10
+        ]
+      },
+      "avgDPD": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": ["$avgDPD", 10] },
+              { "$mod": [{ "$multiply": ["$avgDPD", 10] }, 1] }
+            ]
+          },
+          10
+        ]
+      }
+    }
+  },
+  { "$sort": { "dpdBucket": 1 } }
+]
+
+
+Late Charges Recovered:payments
+[
+  {"$match": {"status": "SUCCESS", "allocation.lateCharges": {"$gt": 0}}},
+  {"$group": {
+    "_id": null,
+    "totalLateChargesRecovered": {"$sum": "$allocation.lateCharges"},
+    "paymentsWithLateCharges": {"$sum": 1}
+  }},
+  {"$project": {"_id": 0}}
+]
+
+
+
+Late Charges Recovered via Payments:payments
+[
+  {
+    "$match": {
+      "status": "SUCCESS",
+      "paymentType": { "$ne": "DISBURSEMENT" },
+      "allocation.lateCharges": { "$gt": 0 }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$paymentType",
+      "count": { "$sum": 1 },
+      "totalLateChargesRecovered": { "$sum": "$allocation.lateCharges" },
+      "totalPaymentAmount": { "$sum": "$amount" }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "paymentType": "$_id",
+      "count": 1,
+      "totalLateChargesRecovered": 1,
+      "totalPaymentAmount": 1,
+      "lateChargesAsPctOfPayment": {
+        "$divide": [
+          {
+            "$subtract": [
+              { "$multiply": [
+                { "$divide": [
+                  "$totalLateChargesRecovered",
+                  { "$cond": [{ "$gt": ["$totalPaymentAmount", 0] }, "$totalPaymentAmount", 1] }
+                ]},
+                1000
+              ]},
+              { "$mod": [
+                { "$multiply": [
+                  { "$divide": [
+                    "$totalLateChargesRecovered",
+                    { "$cond": [{ "$gt": ["$totalPaymentAmount", 0] }, "$totalPaymentAmount", 1] }
+                  ]},
+                  1000
+                ]},
+                1
+              ]}
+            ]
+          },
+          10
+        ]
+      }
+    }
+  },
+  { "$sort": { "totalLateChargesRecovered": -1 } }
+]
