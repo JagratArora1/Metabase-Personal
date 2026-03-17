@@ -1,0 +1,48 @@
+Q29: Lead Status Distribution
+Collection: instantforms Viz: Pie chart
+
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]
+Q30: Daily Lead Volume
+Collection: instantforms Viz: Line chart
+
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$createdAt"}},
+    "leads": {"$sum": 1}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"date": "$_id", "leads": 1, "_id": 0}}
+]
+Q31: Lead Conversion Funnel
+Collection: instantforms Viz: Funnel chart
+
+[
+  {"$match": {"isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": null,
+    "total": {"$sum": 1},
+    "contacted": {"$sum": {"$cond": [{"$in": ["$status", ["CONTACTED", "FOLLOW_UP", "INTERESTED", "CONVERTED", "CLOSED"]]}, 1, 0]}},
+    "followUp": {"$sum": {"$cond": [{"$in": ["$status", ["FOLLOW_UP", "INTERESTED", "CONVERTED"]]}, 1, 0]}},
+    "interested": {"$sum": {"$cond": [{"$in": ["$status", ["INTERESTED", "CONVERTED"]]}, 1, 0]}},
+    "converted": {"$sum": {"$cond": [{"$eq": ["$status", "CONVERTED"]}, 1, 0]}}
+  }},
+  {"$project": {"_id": 0}}
+]
+Q32: Lead Requested Amount Distribution
+Collection: instantforms Viz: Histogram
+
+[
+  {"$match": {"amount": {"$gt": 0}, "isDeleted": {"$ne": true}}},
+  {"$bucket": {
+    "groupBy": "$amount",
+    "boundaries": [0, 10000, 20000, 30000, 50000, 100000, 200000, 500000],
+    "default": "500000+",
+    "output": {"count": {"$sum": 1}}
+  }}
+]

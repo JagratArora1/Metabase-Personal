@@ -1,0 +1,104 @@
+Q5: Ticket Overview
+Collection: supporttickets Viz: Number cards row
+
+[
+  {"$group": {
+    "_id": null,
+    "total": {"$sum": 1},
+    "open": {"$sum": {"$cond": [{"$eq": ["$status", "OPEN"]}, 1, 0]}},
+    "inProgress": {"$sum": {"$cond": [{"$eq": ["$status", "IN_PROGRESS"]}, 1, 0]}},
+    "resolved": {"$sum": {"$cond": [{"$eq": ["$status", "RESOLVED"]}, 1, 0]}},
+    "closed": {"$sum": {"$cond": [{"$eq": ["$status", "CLOSED"]}, 1, 0]}},
+    "reopened": {"$sum": {"$cond": [{"$eq": ["$status", "REOPENED"]}, 1, 0]}}
+  }},
+  {"$project": {"_id": 0}}
+]
+Q6: Ticket Volume Trend (Daily)
+Collection: supporttickets Viz: Line chart
+
+[
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$createdAt"}},
+    "newTickets": {"$sum": 1}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"date": "$_id", "newTickets": 1, "_id": 0}}
+]
+Q7: Tickets by Category
+Collection: supporttickets Viz: Pie chart
+
+[
+  {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"category": "$_id", "count": 1, "_id": 0}}
+]
+Q8: Tickets by Status
+Collection: supporttickets Viz: Donut chart
+
+[
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]
+Q9: Tickets by Source
+Collection: supporttickets Viz: Pie chart
+
+[
+  {"$group": {"_id": {"$ifNull": ["$source", "UNKNOWN"]}, "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"source": "$_id", "count": 1, "_id": 0}}
+]
+Q10: Average Resolution Time
+Collection: supporttickets Viz: Number card (in hours)
+
+[
+  {
+    "$match": {
+      "closedAt": {"$exists": true},
+      "createdAt": {"$exists": true}
+    }
+  },
+  {
+    "$project": {
+      "resolutionHours": {
+        "$divide": [
+          {"$subtract": ["$closedAt", "$createdAt"]},
+          3600000
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "avgResolutionHours": {"$avg": "$resolutionHours"},
+      "count": {"$sum": 1}
+    }
+  },
+  {
+    "$project": {"_id": 0}
+  }
+]
+Q11: Satisfaction Rating Distribution
+Collection: supporttickets Viz: Bar chart
+
+[
+  {"$match": {"satisfactionRating": {"$exists": true, "$gt": 0}}},
+  {"$group": {"_id": "$satisfactionRating", "count": {"$sum": 1}}},
+  {"$sort": {"_id": 1}},
+  {"$project": {"rating": "$_id", "count": 1, "_id": 0}}
+]
+Q12: Reopened Ticket Rate
+Collection: supporttickets Viz: Number card
+
+[
+  {"$group": {
+    "_id": null,
+    "total": {"$sum": 1},
+    "reopened": {"$sum": {"$cond": [{"$eq": ["$status", "REOPENED"]}, 1, 0]}}
+  }},
+  {"$project": {
+    "_id": 0,
+    "reopenedRate": {"$multiply": [{"$divide": ["$reopened", {"$max": ["$total", 1]}]}, 100]}
+  }}
+]

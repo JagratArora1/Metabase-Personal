@@ -1,0 +1,263 @@
+many things:ai call logs
+[
+  {"$group": {
+    "_id": null,
+    "totalCalls": {"$sum": 1},
+    "answered": {"$sum": {"$cond": [{"$eq": ["$status", "answered"]}, 1, 0]}},
+    "noAnswer": {"$sum": {"$cond": [{"$eq": ["$status", "no-answer"]}, 1, 0]}},
+    "failed": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}},
+    "avgDuration": {"$avg": {"$ifNull": ["$duration", 0]}}
+  }},
+  {"$project": {
+    "_id": 0,
+    "totalCalls": 1,
+    "answered": 1,
+    "answerRate": {"$multiply": [{"$divide": ["$answered", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "noAnswer": 1,
+    "failed": 1,
+    "avgDurationSeconds": "$avgDuration"
+  }}
+]
+
+
+
+
+AI Call Daily Trend:ai call logs
+[
+  {
+    "$match": {
+      "startedAt": { "$exists": true, "$ne": null }
+    }
+  },
+  {
+    "$addFields": {
+      "startedAtDate": {
+        "$dateFromString": {
+          "dateString": "$startedAt"
+        }
+      }
+    }
+  },
+  {
+    "$match": {
+      "startedAtDate": { "$ne": null }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$dateToString": {
+          "format": "%Y-%m-%d",
+          "date": "$startedAtDate",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "totalCalls": { "$sum": 1 },
+      "completed": { "$sum": { "$cond": [{ "$eq": ["$status", "completed"] }, 1, 0] } },
+      "inProgress": { "$sum": { "$cond": [{ "$eq": ["$status", "in-progress"] }, 1, 0] } },
+      "noAnswer": { "$sum": { "$cond": [{ "$eq": ["$status", "no-answer"] }, 1, 0] } },
+      "busy": { "$sum": { "$cond": [{ "$eq": ["$status", "busy"] }, 1, 0] } },
+      "failed": { "$sum": { "$cond": [{ "$eq": ["$status", "failed"] }, 1, 0] } },
+      "canceled": { "$sum": { "$cond": [{ "$eq": ["$status", "canceled"] }, 1, 0] } },
+      "initiated": { "$sum": { "$cond": [{ "$eq": ["$status", "initiated"] }, 1, 0] } },
+      "ringing": { "$sum": { "$cond": [{ "$eq": ["$status", "ringing"] }, 1, 0] } },
+      "totalDurationRaw": { "$sum": { "$ifNull": ["$duration", 0] } },
+      "avgDurationRaw": { "$avg": { "$ifNull": ["$duration", 0] } }
+    }
+  },
+  {
+    "$sort": { "_id": 1 }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "date": "$_id",
+      "totalCalls": 1,
+      "completed": 1,
+      "inProgress": 1,
+      "noAnswer": 1,
+      "busy": 1,
+      "failed": 1,
+      "canceled": 1,
+      "initiated": 1,
+      "ringing": 1,
+      "totalDuration": "$totalDurationRaw",
+      "avgDuration": {
+        "$subtract": [
+          "$avgDurationRaw",
+          { "$mod": ["$avgDurationRaw", 1] }
+        ]
+      },
+      "completionRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": [
+                "$completed",
+                { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }
+              ]},
+              1000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": [
+                  "$completed",
+                  { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }
+                ]},
+                1000
+              ]},
+              1
+            ]}
+          ]},
+          10
+        ]
+      },
+      "failureRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": [
+                { "$add": ["$failed", "$canceled"] },
+                { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }
+              ]},
+              1000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": [
+                  { "$add": ["$failed", "$canceled"] },
+                  { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }
+                ]},
+                1000
+              ]},
+              1
+            ]}
+          ]},
+          10
+        ]
+      },
+      "noAnswerRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": [
+                { "$add": ["$noAnswer", "$busy"] },
+                { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }
+              ]},
+              1000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": [
+                  { "$add": ["$noAnswer", "$busy"] },
+                  { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }
+                ]},
+                1000
+              ]},
+              1
+            ]}
+          ]},
+          10
+        ]
+      }
+    }
+  }
+]
+
+
+
+AI Call Duration Distribution:ai call logs
+[
+  { $match: { status: "answered", duration: { $gt: 0 } } },
+  {
+    $group: {
+      _id: {
+        $switch: {
+          branches: [
+            { case: { $lt: ["$duration", 15] },  then: "0-15"   },
+            { case: { $lt: ["$duration", 30] },  then: "15-30"  },
+            { case: { $lt: ["$duration", 60] },  then: "30-60"  },
+            { case: { $lt: ["$duration", 120] }, then: "60-120" },
+            { case: { $lt: ["$duration", 180] }, then: "120-180"},
+            { case: { $lt: ["$duration", 300] }, then: "180-300"},
+            { case: { $lt: ["$duration", 600] }, then: "300-600"}
+          ],
+          default: "600+"
+        }
+      },
+      count: { $sum: 1 }
+    }
+  },
+  { $sort: { "_id": 1 } }
+]
+
+
+
+AI Calls by Amount Owed:ai call logs
+[
+  { $match: { amount: { $gt: 0 } } },
+  {
+    $group: {
+      _id: {
+        $switch: {
+          branches: [
+            { case: { $lt: ["$amount", 10000] }, then: { label: "0-10000",       order: 1 } },
+            { case: { $lt: ["$amount", 15000] }, then: { label: "10000-15000",   order: 2 } },
+            { case: { $lt: ["$amount", 20000] }, then: { label: "15000-20000",   order: 3 } },
+            { case: { $lt: ["$amount", 25000] }, then: { label: "20000-25000",   order: 4 } },
+            { case: { $lt: ["$amount", 30000] }, then: { label: "25000-30000",   order: 5 } },
+            { case: { $lt: ["$amount", 50000] }, then: { label: "30000-50000",   order: 6 } }
+          ],
+          default: { label: "50000+", order: 7 }
+        }
+      },
+      totalCalls: { $sum: 1 },
+      answered: {
+        $sum: { $cond: [{ $eq: ["$status", "answered"] }, 1, 0] }
+      }
+    }
+  },
+  { $sort: { "_id.order": 1 } },
+  {
+    $project: {
+      _id: 0,
+      amountRange: "$_id.label",
+      totalCalls: 1,
+      answered: 1,
+      answerRate: {
+        $multiply: [
+          { $divide: ["$answered", { $max: ["$totalCalls", 1] }] },
+          100
+        ]
+      }
+    }
+  }
+]
+
+
+
+AI Calls by DPD Category:ai call logs
+[
+  {"$group": {
+    "_id": "$dpdCategory",
+    "total": {"$sum": 1},
+    "answered": {"$sum": {"$cond": [{"$eq": ["$status", "answered"]}, 1, 0]}}
+  }},
+  {"$sort": {"total": -1}},
+  {"$project": {
+    "dpdCategory": "$_id",
+    "total": 1,
+    "answered": 1,
+    "answerRate": {"$multiply": [{"$divide": ["$answered", {"$max": ["$total", 1]}]}, 100]},
+    "_id": 0
+  }}
+]
+
+
+
+AI Call Status Distribution:ai call logs
+[
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]

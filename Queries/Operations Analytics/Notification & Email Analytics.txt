@@ -1,0 +1,42 @@
+Q13: Notification Volume by Type
+Collection: notifications Viz: Bar chart
+
+[
+  {"$group": {"_id": "$type", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"type": "$_id", "count": 1, "_id": 0}}
+]
+Q14: Notification Status Distribution
+Collection: notifications Viz: Pie chart
+
+[
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]
+Q15: Email Type Distribution
+Collection: emaillogs Viz: Bar chart
+
+[
+  {"$group": {"_id": "$emailType", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"emailType": "$_id", "count": 1, "_id": 0}}
+]
+Q16: Email Success/Failure Rate
+Collection: emaillogs Viz: Pie chart
+
+[
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]
+Q17: Daily Email Volume
+Collection: emaillogs Viz: Line chart
+
+[
+  {"$match": {"sentAt": {"$exists": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$sentAt"}},
+    "emailsSent": {"$sum": 1}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"date": "$_id", "emailsSent": 1, "_id": 0}}
+]
