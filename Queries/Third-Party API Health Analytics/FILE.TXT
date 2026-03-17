@@ -1,0 +1,306 @@
+----------SAME AS MD IN GITHUB--------------
+
+
+
+# Third-Party API Health Analytics
+
+## Dashboard 7a: API Success Rates
+
+### Q1: Overall API Health Summary
+**Collection**: `apimetrics`
+**Viz**: Table with conditional formatting (red for high failure rates)
+```json
+[
+  {"$group": {
+    "_id": {"provider": "$provider", "service": "$serviceName"},
+    "totalCalls": {"$sum": "$countTotal"},
+    "successCalls": {"$sum": "$countSuccess"},
+    "failedCalls": {"$sum": "$countFailure"}
+  }},
+  {"$project": {
+    "provider": "$_id.provider",
+    "service": "$_id.service",
+    "totalCalls": 1,
+    "successCalls": 1,
+    "failedCalls": 1,
+    "successRate": {"$multiply": [{"$divide": ["$successCalls", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "failureRate": {"$multiply": [{"$divide": ["$failedCalls", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "_id": 0
+  }},
+  {"$sort": {"failureRate": -1}}
+]
+```
+**Key Alert**: Credit Bureau has 84.5% failure rate
+
+### Q2: Daily API Call Volume
+**Collection**: `apimetrics`
+**Viz**: Stacked area chart (by service)
+```json
+[
+  {"$group": {
+    "_id": {"date": "$date", "service": "$serviceName"},
+    "totalCalls": {"$sum": "$countTotal"}
+  }},
+  {"$sort": {"_id.date": 1}},
+  {"$project": {"date": "$_id.date", "service": "$_id.service", "totalCalls": 1, "_id": 0}}
+]
+```
+
+### Q3: Success Rate Trend Over Time
+**Collection**: `apimetrics`
+**Viz**: Line chart (per provider)
+```json
+[
+  {"$group": {
+    "_id": {"date": "$date", "provider": "$provider"},
+    "totalCalls": {"$sum": "$countTotal"},
+    "successCalls": {"$sum": "$countSuccess"}
+  }},
+  {"$sort": {"_id.date": 1}},
+  {"$project": {
+    "date": "$_id.date",
+    "provider": "$_id.provider",
+    "successRate": {"$multiply": [{"$divide": ["$successCalls", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "_id": 0
+  }}
+]
+```
+
+### Q4: Failure Rate by Service
+**Collection**: `apimetrics`
+**Viz**: Horizontal bar chart (sorted by failure rate)
+```json
+[
+  {"$group": {
+    "_id": "$serviceName",
+    "totalCalls": {"$sum": "$countTotal"},
+    "failedCalls": {"$sum": "$countFailure"}
+  }},
+  {"$project": {
+    "service": "$_id",
+    "totalCalls": 1,
+    "failedCalls": 1,
+    "failureRate": {"$multiply": [{"$divide": ["$failedCalls", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "_id": 0
+  }},
+  {"$sort": {"failureRate": -1}}
+]
+```
+
+### Q5: Credit Bureau Failure Analysis (Deep Dive)
+**Collection**: `apimetrics`
+**Viz**: Line chart (daily trend)
+```json
+[
+  {"$match": {"provider": "CREDIT_BUREAU"}},
+  {"$group": {
+    "_id": "$date",
+    "totalCalls": {"$sum": "$countTotal"},
+    "successCalls": {"$sum": "$countSuccess"},
+    "failedCalls": {"$sum": "$countFailure"}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {
+    "date": "$_id",
+    "totalCalls": 1,
+    "successCalls": 1,
+    "failedCalls": 1,
+    "failureRate": {"$multiply": [{"$divide": ["$failedCalls", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "_id": 0
+  }}
+]
+```
+
+### Q6: Error Message Distribution
+**Collection**: `apimetrics`
+**Viz**: Table
+```json
+[
+  {"$match": {"errorMessage": {"$exists": true, "$ne": null, "$ne": ""}}},
+  {"$group": {
+    "_id": {"provider": "$provider", "error": "$errorMessage"},
+    "count": {"$sum": "$countFailure"}
+  }},
+  {"$sort": {"count": -1}},
+  {"$limit": 30},
+  {"$project": {"provider": "$_id.provider", "errorMessage": "$_id.error", "failureCount": "$count", "_id": 0}}
+]
+```
+
+### Q7: HTTP Status Code Distribution
+**Collection**: `apimetrics`
+**Viz**: Bar chart
+```json
+[
+  {"$match": {"statusCode": {"$exists": true}}},
+  {"$group": {"_id": "$statusCode", "count": {"$sum": "$countTotal"}}},
+  {"$sort": {"_id": 1}},
+  {"$project": {"statusCode": "$_id", "count": 1, "_id": 0}}
+]
+```
+
+---
+
+## Dashboard 7b: Provider Performance & Cost
+
+### Q8: Provider Comparison Matrix
+**Collection**: `apimetrics`
+**Viz**: Table
+```json
+[
+  {"$group": {
+    "_id": "$provider",
+    "totalCalls": {"$sum": "$countTotal"},
+    "successCalls": {"$sum": "$countSuccess"},
+    "failedCalls": {"$sum": "$countFailure"},
+    "totalCost": {"$sum": "$cost"},
+    "services": {"$addToSet": "$serviceName"}
+  }},
+  {"$project": {
+    "provider": "$_id",
+    "totalCalls": 1,
+    "successRate": {"$multiply": [{"$divide": ["$successCalls", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "failedCalls": 1,
+    "totalCost": 1,
+    "costPerCall": {"$cond": [{"$gt": ["$totalCalls", 0]}, {"$divide": ["$totalCost", "$totalCalls"]}, 0]},
+    "serviceCount": {"$size": "$services"},
+    "_id": 0
+  }},
+  {"$sort": {"totalCalls": -1}}
+]
+```
+
+### Q9: Active Provider Configuration
+**Collection**: `thirdpartyapimanagements`
+**Viz**: Table
+```json
+[
+  {"$unwind": "$providers"},
+  {"$project": {
+    "service": "$serviceName",
+    "provider": "$providers.name",
+    "isActive": "$providers.isActive",
+    "priority": "$providers.priority",
+    "costPerCall": "$providers.perApiCallCost",
+    "timeout": "$providers.timeout",
+    "retryCount": "$providers.retryCount",
+    "_id": 0
+  }},
+  {"$sort": {"service": 1, "priority": 1}}
+]
+```
+
+### Q10: Total API Spend by Provider
+**Collection**: `apimetrics`
+**Viz**: Pie chart
+```json
+[
+  {"$match": {"cost": {"$gt": 0}}},
+  {"$group": {"_id": "$provider", "totalSpend": {"$sum": "$cost"}, "totalCalls": {"$sum": "$countTotal"}}},
+  {"$sort": {"totalSpend": -1}},
+  {"$project": {"provider": "$_id", "totalSpend": 1, "totalCalls": 1, "_id": 0}}
+]
+```
+
+### Q11: Cost Per Successful Verification
+**Collection**: `apimetrics`
+**Viz**: Table
+```json
+[
+  {"$group": {
+    "_id": {"provider": "$provider", "service": "$serviceName"},
+    "totalCost": {"$sum": "$cost"},
+    "successCalls": {"$sum": "$countSuccess"},
+    "totalCalls": {"$sum": "$countTotal"}
+  }},
+  {"$match": {"successCalls": {"$gt": 0}}},
+  {"$project": {
+    "provider": "$_id.provider",
+    "service": "$_id.service",
+    "totalCost": 1,
+    "successCalls": 1,
+    "costPerSuccess": {"$divide": ["$totalCost", "$successCalls"]},
+    "costPerCall": {"$cond": [{"$gt": ["$totalCalls", 0]}, {"$divide": ["$totalCost", "$totalCalls"]}, 0]},
+    "_id": 0
+  }},
+  {"$sort": {"costPerSuccess": -1}}
+]
+```
+
+### Q12: Face Verification Analytics (AWS Rekognition)
+**Collection**: `apimetrics`
+**Viz**: Table
+```json
+[
+  {"$match": {"provider": "AWS_REKOGNITION"}},
+  {"$group": {
+    "_id": "$serviceName",
+    "totalCalls": {"$sum": "$countTotal"},
+    "successCalls": {"$sum": "$countSuccess"},
+    "failedCalls": {"$sum": "$countFailure"},
+    "totalCost": {"$sum": "$cost"}
+  }},
+  {"$project": {
+    "service": "$_id",
+    "totalCalls": 1,
+    "successRate": {"$multiply": [{"$divide": ["$successCalls", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "totalCost": 1,
+    "_id": 0
+  }}
+]
+```
+
+### Q13: SurePass vs Sandbox Comparison
+**Collection**: `apimetrics`
+**Viz**: Table
+```json
+[
+  {"$match": {"provider": {"$in": ["SUREPASS", "SANDBOX"]}}},
+  {"$group": {
+    "_id": {"provider": "$provider", "service": "$serviceName"},
+    "totalCalls": {"$sum": "$countTotal"},
+    "successCalls": {"$sum": "$countSuccess"},
+    "failedCalls": {"$sum": "$countFailure"},
+    "totalCost": {"$sum": "$cost"}
+  }},
+  {"$project": {
+    "provider": "$_id.provider",
+    "service": "$_id.service",
+    "totalCalls": 1,
+    "successRate": {"$multiply": [{"$divide": ["$successCalls", {"$max": ["$totalCalls", 1]}]}, 100]},
+    "totalCost": 1,
+    "_id": 0
+  }},
+  {"$sort": {"_id.service": 1, "_id.provider": 1}}
+]
+```
+
+### Q14: Daily API Cost Trend
+**Collection**: `apimetrics`
+**Viz**: Line chart
+```json
+[
+  {"$match": {"cost": {"$gt": 0}}},
+  {"$group": {
+    "_id": "$date",
+    "totalCost": {"$sum": "$cost"},
+    "totalCalls": {"$sum": "$countTotal"}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"date": "$_id", "totalCost": 1, "totalCalls": 1, "_id": 0}}
+]
+```
+
+---
+
+## Recommended Filters
+- **Date Range**: `date` field filter
+- **Provider**: SUREPASS / SANDBOX / CREDIT_BUREAU / AWS_REKOGNITION
+- **Service**: PAN_VERIFICATION / AADHAAR_VERIFICATION / BANK_ACCOUNT_VERIFICATION / CREDIT_BUREAU / FACE_LIVENESS / COMPARE_FACES
+- **Status Code**: 200 / 400 / 500 etc.
+
+## Key Alerts to Configure
+1. **Credit Bureau failure rate > 50%** - Critical alert
+2. **Any provider failure rate > 10%** - Warning
+3. **Daily API cost exceeds threshold** - Budget alert
+4. **AWS Rekognition CREATE_LIVENESS_SESSION 92% failure** - Investigate
