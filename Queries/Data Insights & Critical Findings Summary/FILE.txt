@@ -1,0 +1,441 @@
+Cibil Analysis:applications
+[
+  {
+    "$match": { "isDeleted": { "$ne": true } }
+  },
+  {
+    "$group": {
+      "_id": "$customerId",
+      "totalApps": { "$sum": 1 },
+      "disbursed": { "$sum": { "$cond": [{ "$eq": ["$status", "DISBURSED"] }, 1, 0] } },
+      "rejected": { "$sum": { "$cond": [{ "$eq": ["$status", "REJECTED"] }, 1, 0] } },
+      "pending": { "$sum": { "$cond": [{ "$in": ["$status", ["PENDING", "PROCESSING"]] }, 1, 0] } }
+    }
+  },
+  {
+    "$lookup": {
+      "from": "customers",
+      "localField": "_id",
+      "foreignField": "_id",
+      "as": "c"
+    }
+  },
+  { "$unwind": { "path": "$c", "preserveNullAndEmptyArrays": false } },
+  {
+    "$addFields": {
+      "cibilBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lt": [{ "$ifNull": ["$c.cibilScore", 0] }, 300] }, "then": "A: 0-300" },
+            { "case": { "$lt": [{ "$ifNull": ["$c.cibilScore", 0] }, 500] }, "then": "B: 300-500" },
+            { "case": { "$lt": [{ "$ifNull": ["$c.cibilScore", 0] }, 600] }, "then": "C: 500-600" },
+            { "case": { "$lt": [{ "$ifNull": ["$c.cibilScore", 0] }, 650] }, "then": "D: 600-650" },
+            { "case": { "$lt": [{ "$ifNull": ["$c.cibilScore", 0] }, 700] }, "then": "E: 650-700" },
+            { "case": { "$lt": [{ "$ifNull": ["$c.cibilScore", 0] }, 750] }, "then": "F: 700-750" },
+            { "case": { "$lt": [{ "$ifNull": ["$c.cibilScore", 0] }, 800] }, "then": "G: 750-800" }
+          ],
+          "default": "H: 800+"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$cibilBucket",
+      "totalApps": { "$sum": "$totalApps" },
+      "disbursed": { "$sum": "$disbursed" },
+      "rejected": { "$sum": "$rejected" },
+      "pending": { "$sum": "$pending" },
+      "uniqueCustomers": { "$sum": 1 }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "cibilBand": "$_id",
+      "uniqueCustomers": 1,
+      "totalApps": 1,
+      "disbursed": 1,
+      "rejected": 1,
+      "pending": 1,
+      "conversionRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$disbursed", { "$cond": [{ "$gt": ["$totalApps", 0] }, "$totalApps", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$disbursed", { "$cond": [{ "$gt": ["$totalApps", 0] }, "$totalApps", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      },
+      "rejectionRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$rejected", { "$cond": [{ "$gt": ["$totalApps", 0] }, "$totalApps", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$rejected", { "$cond": [{ "$gt": ["$totalApps", 0] }, "$totalApps", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      }
+    }
+  },
+  { "$sort": { "cibilBand": 1 } }
+]
+
+
+
+Credit Bureau API Failure Rate:apimetrics
+[
+  {
+    "$match": {
+      "serviceName": "CREDIT_BUREAU"
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "totalCalls": { "$sum": { "$ifNull": ["$countTotal", 0] } },
+      "successCalls": { "$sum": { "$ifNull": ["$countSuccess", 0] } },
+      "failedCalls": { "$sum": { "$ifNull": ["$countFailure", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "totalCalls": 1,
+      "successCalls": 1,
+      "failedCalls": 1,
+      "successRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$successCalls", { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$successCalls", { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      },
+      "failureRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$failedCalls", { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$failedCalls", { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      }
+    }
+  }
+]
+
+
+
+Daily Trend — Credit Bureau Failures:apimetrics
+[
+  {
+    "$match": {
+      "serviceName": "CREDIT_BUREAU",
+      "createdAt": { "$exists": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "$dateToString": {
+          "format": "%Y-%m-%d",
+          "date": "$createdAt",
+          "timezone": "Asia/Kolkata"
+        }
+      },
+      "totalCalls": { "$sum": { "$ifNull": ["$countTotal", 0] } },
+      "successCalls": { "$sum": { "$ifNull": ["$countSuccess", 0] } },
+      "failedCalls": { "$sum": { "$ifNull": ["$countFailure", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "date": "$_id",
+      "totalCalls": 1,
+      "successCalls": 1,
+      "failedCalls": 1,
+      "failureRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$failedCalls", { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$failedCalls", { "$cond": [{ "$gt": ["$totalCalls", 0] }, "$totalCalls", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      }
+    }
+  },
+  { "$sort": { "date": 1 } }
+]
+
+
+
+
+Loans Tenure Risk Alert:Loans
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true },
+      "tenure": { "$in": [7, 15, 30, 60, 90] }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$tenure",
+      "totalLoans": { "$sum": 1 },
+      "overdueLoans": { "$sum": { "$cond": [{ "$in": ["$status", ["OVERDUE", "NPA"]] }, 1, 0] } },
+      "closedLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "CLOSED"] }, 1, 0] } },
+      "activeLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "ACTIVE"] }, 1, 0] } },
+      "avgDPDRaw": { "$avg": { "$ifNull": ["$dpd", 0] } },
+      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
+      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "tenure": "$_id",
+      "totalLoans": 1,
+      "overdueLoans": 1,
+      "closedLoans": 1,
+      "activeLoans": 1,
+      "totalDisbursed": 1,
+      "totalOutstanding": 1,
+      "avgDPD": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": ["$avgDPDRaw", 10] },
+            { "$mod": [{ "$multiply": ["$avgDPDRaw", 10] }, 1] }
+          ]}, 10
+        ]
+      },
+      "overdueRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$overdueLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$overdueLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      },
+      "closureRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$closedLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$closedLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      }
+    }
+  },
+  { "$sort": { "tenure": 1 } }
+]
+
+
+
+
+Mandate vs No-Mandate Risk Comparison:Loans
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true },
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] }
+    }
+  },
+  {
+    "$addFields": {
+      "mandateStatus": {
+        "$switch": {
+          "branches": [
+            {
+              "case": { "$eq": [{ "$ifNull": ["$collectionMode", ""] }, "AUTOPAY"] },
+              "then": "AUTOPAY (With Mandate)"
+            },
+            {
+              "case": { "$eq": [{ "$ifNull": ["$collectionMode", ""] }, "MANUAL"] },
+              "then": "MANUAL (No Mandate)"
+            }
+          ],
+          "default": "NOT SET"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$mandateStatus",
+      "totalLoans": { "$sum": 1 },
+      "overdueLoans": { "$sum": { "$cond": [{ "$in": ["$status", ["OVERDUE", "NPA"]] }, 1, 0] } },
+      "closedLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "CLOSED"] }, 1, 0] } },
+      "activeLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "ACTIVE"] }, 1, 0] } },
+      "avgDPDRaw": { "$avg": { "$ifNull": ["$dpd", 0] } },
+      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
+      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "mandateStatus": "$_id",
+      "totalLoans": 1,
+      "overdueLoans": 1,
+      "closedLoans": 1,
+      "activeLoans": 1,
+      "totalDisbursed": 1,
+      "totalOutstanding": 1,
+      "avgDPD": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": ["$avgDPDRaw", 10] },
+            { "$mod": [{ "$multiply": ["$avgDPDRaw", 10] }, 1] }
+          ]}, 10
+        ]
+      },
+      "overdueRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$overdueLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$overdueLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      },
+      "closureRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$closedLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$closedLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      }
+    }
+  },
+  { "$sort": { "mandateStatus": 1 } }
+]
+
+
+
+
+Portfolio Health Snapshot:Loans
+[
+  {
+    "$match": { "isDeleted": { "$ne": true } }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "totalLoans": { "$sum": 1 },
+      "activeLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "ACTIVE"] }, 1, 0] } },
+      "overdueLoans": { "$sum": { "$cond": [{ "$in": ["$status", ["OVERDUE", "NPA"]] }, 1, 0] } },
+      "npaLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "NPA"] }, 1, 0] } },
+      "closedLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "CLOSED"] }, 1, 0] } },
+      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } },
+      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
+      "avgDPDRaw": { "$avg": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "totalLoans": 1,
+      "activeLoans": 1,
+      "overdueLoans": 1,
+      "npaLoans": 1,
+      "closedLoans": 1,
+      "totalOutstanding": 1,
+      "totalDisbursed": 1,
+      "overdueRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$overdueLoans", { "$cond": [{ "$gt": ["$activeLoans", 0] }, "$activeLoans", 1] }] }, 1000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$overdueLoans", { "$cond": [{ "$gt": ["$activeLoans", 0] }, "$activeLoans", 1] }] }, 1000] }, 1] }
+          ]}, 10
+        ]
+      },
+      "closureRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$closedLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] }, 1000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$closedLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] }, 1000] }, 1] }
+          ]}, 10
+        ]
+      },
+      "avgDPD": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": ["$avgDPDRaw", 10] },
+            { "$mod": [{ "$multiply": ["$avgDPDRaw", 10] }, 1] }
+          ]}, 10
+        ]
+      }
+    }
+  }
+]
