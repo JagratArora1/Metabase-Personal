@@ -439,3 +439,68 @@ Portfolio Health Snapshot:Loans
     }
   }
 ]
+
+
+
+
+
+v1 vs v2:user journeys
+[
+  {
+    "$match": {
+      "landingPage": { "$exists": true, "$ne": null, "$ne": "","$in":["/apply/quick","/apply/quick-v2"] }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$landingPage",
+      "totalVisitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$isConverted", true] }, 1, 0] } },
+      "abandoned": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "ABANDONED"] }, 1, 0] } },
+      "avgTimeSpentRaw": { "$avg": { "$ifNull": ["$totalTimeSpent", 0] } },
+      "avgEngagementRaw": { "$avg": { "$ifNull": ["$engagementScore", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "landingPage": "$_id",
+      "totalVisitors": 1,
+      "converted": 1,
+      "abandoned": 1,
+      "conversionRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$converted", { "$cond": [{ "$gt": ["$totalVisitors", 0] }, "$totalVisitors", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$converted", { "$cond": [{ "$gt": ["$totalVisitors", 0] }, "$totalVisitors", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      },
+      "abandonRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": ["$abandoned", { "$cond": [{ "$gt": ["$totalVisitors", 0] }, "$totalVisitors", 1] }] },
+              10000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": ["$abandoned", { "$cond": [{ "$gt": ["$totalVisitors", 0] }, "$totalVisitors", 1] }] },
+                10000
+              ]}, 1
+            ]}
+          ]}, 100
+        ]
+      }
+    }
+  },
+  { "$sort": { "totalVisitors": -1 } }
+]
