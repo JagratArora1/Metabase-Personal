@@ -1,0 +1,42 @@
+Loans Marked as Settled:Loans
+[
+  {"$match": {"isSettled": true, "isDeleted": {"$ne": true}}},
+  {"$project": {
+    "loanNumber": 1,
+    "principalAmount": 1,
+    "settlementAmount": 1,
+    "settlementDate": 1,
+    "settlementType": 1,
+    "totalOutstanding": 1
+  }},
+  {"$sort": {"settlementDate": -1}}
+]
+
+
+
+
+Settlement Summary:Settlements
+[
+  {"$group": {
+    "_id": "$status",
+    "count": {"$sum": 1},
+    "totalSettlementAmount": {"$sum": "$settlementAmount"},
+    "totalWaiverAmount": {"$sum": "$waiverAmount"},
+    "avgWaiverPct": {"$avg": "$waiverPercentage"}
+  }},
+  {"$project": {"status": "$_id", "count": 1, "totalSettlementAmount": 1, "totalWaiverAmount": 1, "avgWaiverPct": 1, "_id": 0}}
+]
+
+
+
+Write-off Summary:Loans
+[
+  {"$match": {"isWrittenOff": true, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": null,
+    "count": {"$sum": 1},
+    "totalWrittenOff": {"$sum": "$writeOffAmount"},
+    "avgWriteOffAmount": {"$avg": "$writeOffAmount"}
+  }},
+  {"$project": {"_id": 0}}
+]

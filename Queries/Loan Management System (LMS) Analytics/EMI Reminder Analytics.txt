@@ -1,0 +1,36 @@
+Loan Reminder Tracking Summary:loans
+[
+  {"$match": {"reminderTracking.totalRemindersSent": {"$gt": 0}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": "$reminderTracking.lastReminderType",
+    "count": {"$sum": 1},
+    "avgRemindersSent": {"$avg": "$reminderTracking.totalRemindersSent"}
+  }},
+  {"$sort": {"count": -1}},
+  {"$project": {"reminderType": "$_id", "count": 1, "avgRemindersSent": 1, "_id": 0}}
+]
+
+
+
+
+Reminder Channel Distribution:loans
+[
+  {"$match": {"reminderTracking.reminderHistory": {"$exists": true, "$ne": []}, "isDeleted": {"$ne": true}}},
+  {"$unwind": "$reminderTracking.reminderHistory"},
+  {"$unwind": "$reminderTracking.reminderHistory.channels"},
+  {"$group": {"_id": "$reminderTracking.reminderHistory.channels", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"channel": "$_id", "count": 1, "_id": 0}}
+]
+
+
+
+Reminder Logs Summary:reminder logs
+[
+  {"$group": {
+    "_id": "$reminderType",
+    "count": {"$sum": 1}
+  }},
+  {"$sort": {"count": -1}},
+  {"$project": {"reminderType": "$_id", "count": 1, "_id": 0}}
+]

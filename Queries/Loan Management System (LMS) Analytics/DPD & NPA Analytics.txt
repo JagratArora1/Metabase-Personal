@@ -1,0 +1,256 @@
+Average DPD by Loan Amount Range:loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$addFields": {
+      "amountBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lt": ["$principalAmount", 10000] }, "then": "A: Below 10K" },
+            { "case": { "$lt": ["$principalAmount", 15000] }, "then": "B: 10K-15K" },
+            { "case": { "$lt": ["$principalAmount", 20000] }, "then": "C: 15K-20K" },
+            { "case": { "$lt": ["$principalAmount", 25000] }, "then": "D: 20K-25K" },
+            { "case": { "$lt": ["$principalAmount", 30000] }, "then": "E: 25K-30K" },
+            { "case": { "$lt": ["$principalAmount", 50000] }, "then": "F: 30K-50K" }
+          ],
+          "default": "G: 50K+"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$amountBucket",
+      "count": { "$sum": 1 },
+      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
+      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } },
+      "avgDPDRaw": { "$avg": { "$ifNull": ["$dpd", 0] } },
+      "overdueCount": { "$sum": { "$cond": [{ "$gt": [{ "$ifNull": ["$dpd", 0] }, 0] }, 1, 0] } },
+      "npaCount": { "$sum": { "$cond": [{ "$eq": ["$status", "NPA"] }, 1, 0] } },
+      "activeCount": { "$sum": { "$cond": [{ "$eq": ["$status", "ACTIVE"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "amountBucket": "$_id",
+      "count": 1,
+      "totalDisbursed": 1,
+      "totalOutstanding": 1,
+      "activeCount": 1,
+      "overdueCount": 1,
+      "npaCount": 1,
+      "avgDPD": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": ["$avgDPDRaw", 10] },
+            { "$mod": [{ "$multiply": ["$avgDPDRaw", 10] }, 1] }
+          ]},
+          10
+        ]
+      },
+      "overdueRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$overdueCount", { "$cond": [{ "$gt": ["$count", 0] }, "$count", 1] }] }, 1000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$overdueCount", { "$cond": [{ "$gt": ["$count", 0] }, "$count", 1] }] }, 1000] }, 1] }
+          ]},
+          10
+        ]
+      },
+      "npaRate": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [{ "$divide": ["$npaCount", { "$cond": [{ "$gt": ["$count", 0] }, "$count", 1] }] }, 1000] },
+            { "$mod": [{ "$multiply": [{ "$divide": ["$npaCount", { "$cond": [{ "$gt": ["$count", 0] }, "$count", 1] }] }, 1000] }, 1] }
+          ]},
+          10
+        ]
+      }
+    }
+  },
+  {
+    "$sort": { "amountBucket": 1 }
+  }
+]
+
+
+
+DPD Bucket Distribution (Count & Amount):loans
+[
+  {"$match": {"status": {"$in": ["ACTIVE", "OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$ifNull": ["$dpdBucket", "Not Set"]},
+    "loanCount": {"$sum": 1},
+    "totalOutstanding": {"$sum": "$totalOutstanding"},
+    "principalOutstanding": {"$sum": "$principalOutstanding"},
+    "interestOutstanding": {"$sum": "$interestOutstanding"},
+    "avgDPD": {"$avg": {"$ifNull": ["$dpd", 0]}}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"dpdBucket": "$_id", "loanCount": 1, "totalOutstanding": 1, "principalOutstanding": 1, "interestOutstanding": 1, "avgDPD": 1, "_id": 0}}
+]
+
+
+
+DPD Bucket Weekly Trend:loans
+[
+  {"$match": {"status": {"$in": ["ACTIVE", "OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {
+      "month": {"$dateToString": {"format": "%Y-%m", "date": "$disbursementDate"}},
+      "bucket": {"$ifNull": ["$dpdBucket", "0"]}
+    },
+    "count": {"$sum": 1}
+  }},
+  {"$sort": {"_id.month": 1}},
+  {"$project": {"month": "$_id.month", "dpdBucket": "$_id.bucket", "count": 1, "_id": 0}}
+]
+
+
+
+Late Charges Summary:loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE", "NPA"] },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$dpdBucket", "Not Set"] },
+      "count": { "$sum": 1 },
+      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } },
+      "totalPenalty": { "$sum": { "$ifNull": ["$lateChargesOutstanding", 0] } },
+      "totalLateInterest": { "$sum": { "$ifNull": ["$lateChargeInterestOutstanding", 0] } },
+      "totalLateChargesCombined": { "$sum": { "$add": [
+        { "$ifNull": ["$lateChargesOutstanding", 0] },
+        { "$ifNull": ["$lateChargeInterestOutstanding", 0] }
+      ]}},
+      "avgPenaltyRaw": { "$avg": { "$ifNull": ["$lateChargesOutstanding", 0] } },
+      "avgLateInterestRaw": { "$avg": { "$ifNull": ["$lateChargeInterestOutstanding", 0] } },
+      "avgDPDRaw": { "$avg": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$sort": { "_id": 1 }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "dpdBucket": "$_id",
+      "count": 1,
+      "totalOutstanding": 1,
+      "totalPenalty": "$totalPenalty",
+      "totalLateInterest": 1,
+      "totalLateChargesCombined": 1,
+      "avgPenaltyPerLoan": {
+        "$subtract": [
+          "$avgPenaltyRaw",
+          { "$mod": ["$avgPenaltyRaw", 1] }
+        ]
+      },
+      "avgLateInterestPerLoan": {
+        "$subtract": [
+          "$avgLateInterestRaw",
+          { "$mod": ["$avgLateInterestRaw", 1] }
+        ]
+      },
+      "avgDPD": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": ["$avgDPDRaw", 10] },
+            { "$mod": [{ "$multiply": ["$avgDPDRaw", 10] }, 1] }
+          ]},
+          10
+        ]
+      },
+      "lateChargesAsPctOfOutstanding": {
+        "$divide": [
+          { "$subtract": [
+            { "$multiply": [
+              { "$divide": [
+                "$totalLateChargesCombined",
+                { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }
+              ]},
+              1000
+            ]},
+            { "$mod": [
+              { "$multiply": [
+                { "$divide": [
+                  "$totalLateChargesCombined",
+                  { "$cond": [{ "$gt": ["$totalOutstanding", 0] }, "$totalOutstanding", 1] }
+                ]},
+                1000
+              ]},
+              1
+            ]}
+          ]},
+          10
+        ]
+      }
+    }
+  }
+]
+
+
+
+
+Loans Currently Overdue (with DPD breakdown):loans
+[
+  {"$match": {"status": {"$in": ["OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": null,
+    "totalOverdue": {"$sum": 1},
+    "dpd1to7": {"$sum": {"$cond": [{"$and": [{"$gte": [{"$ifNull": ["$dpd", 0]}, 1]}, {"$lte": ["$dpd", 7]}]}, 1, 0]}},
+    "dpd8to15": {"$sum": {"$cond": [{"$and": [{"$gte": ["$dpd", 8]}, {"$lte": ["$dpd", 15]}]}, 1, 0]}},
+    "dpd16to30": {"$sum": {"$cond": [{"$and": [{"$gte": ["$dpd", 16]}, {"$lte": ["$dpd", 30]}]}, 1, 0]}},
+    "dpd31to60": {"$sum": {"$cond": [{"$and": [{"$gte": ["$dpd", 31]}, {"$lte": ["$dpd", 60]}]}, 1, 0]}},
+    "dpd61plus": {"$sum": {"$cond": [{"$gte": ["$dpd", 61]}, 1, 0]}},
+    "totalOverdueOutstanding": {"$sum": {"$ifNull": ["$totalOutstanding", 0]}}
+  }},
+  {"$project": {"_id": 0}}
+]
+
+
+
+Overdue Loans Detail Table:loans
+[
+  {"$match": {"status": {"$in": ["OVERDUE", "NPA"]}, "isDeleted": {"$ne": true}}},
+  {"$lookup": {"from": "customers", "localField": "customerId", "foreignField": "_id", "as": "customer"}},
+  {"$unwind": {"path": "$customer", "preserveNullAndEmptyArrays": true}},
+  {"$unwind": {"path": "$schedule", "preserveNullAndEmptyArrays": true}},
+  {"$project": {
+    "loanNumber": 1,
+    "customerName": "$customer.fullName",
+    "mobile": "$customer.mobile",
+    "principalAmount": 1,
+    "totalOutstanding": 1,
+    "principalOutstanding": 1,
+    "interestOutstanding": 1,
+    "lateChargesPenalty": {"$ifNull": ["$lateChargesOutstanding", 0]},
+    "lateChargesInterest": {"$ifNull": ["$lateChargeInterestOutstanding", 0]},
+    "dpd": 1,
+    "dpdBucket": 1,
+    "status": 1,
+    "dueDate": 1,
+    "tenure": 1,
+    "disbursementDate": 1,
+    "schedulePaidAmount": {"$max": [{"$ifNull": ["$schedule.paidAmount", 0]}, 0]},
+    "scheduleBalance": {"$ifNull": ["$schedule.balance", 0]},
+    "scheduleStatus": "$schedule.status",
+    "remindersSent": {"$ifNull": ["$reminderTracking.totalRemindersSent", 0]},
+    "lastReminderType": "$reminderTracking.lastReminderType"
+  }},
+  {"$sort": {"dpd": -1}},
+  {"$limit": 400}
+]
+
+
+

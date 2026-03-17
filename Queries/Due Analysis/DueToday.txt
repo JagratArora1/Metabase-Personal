@@ -275,7 +275,8 @@ Paid Before Due Date:Loans
           "cond": {
             "$and": [
               { "$eq": ["$$p.status", "SUCCESS"] },
-              { "$lt": ["$$p.createdAt", "$dueDate"] }
+              { "$ne": ["$$p.paymentType", "DISBURSEMENT"] },
+              { "$lt": ["$$p.paymentDate", "$dueDate"] }
             ]
           }
         }
@@ -293,7 +294,7 @@ Paid Before Due Date:Loans
         "$reduce": {
           "input": "$earlyPayments",
           "initialValue": 0,
-          "in": { "$add": ["$$value", { "$ifNull": ["$$this.amount", 0] } ] }
+          "in": { "$add": ["$$value", { "$ifNull": ["$$this.amount", 0] }] }
         }
       }
     }
@@ -302,15 +303,14 @@ Paid Before Due Date:Loans
     "$group": {
       "_id": null,
       "totalLoans": { "$sum": 1 },
-      "totalEarlyPaymentAmount": { "$sum": "$earlyPaymentTotal" },
-      "avgEarlyPaymentAmount": { "$avg": "$earlyPaymentTotal" }
+      "totalEarlyPaymentAmount": { "$sum": "$earlyPaymentTotal" }
     }
   },
   {
     "$project": {
       "_id": 0,
       "totalLoans": 1,
-      "totalEarlyPaymentAmount": 1,
+      "totalEarlyPaymentAmount": 1
     }
   }
 ]
@@ -530,12 +530,12 @@ People who paid before due date:loans
     "$addFields": {
       "startDate": {
         "$dateFromString": {
-          "dateString": {"$concat": [{{start_date}}, "T18:30:00.000+00:00"]}
+          "dateString": { "$concat": [{{start_date}}, "T18:30:00.000+00:00"] }
         }
       },
       "endDate": {
         "$dateFromString": {
-          "dateString": {"$concat": [{{end_date}}, "T18:29:59.000+00:00"]}
+          "dateString": { "$concat": [{{end_date}}, "T18:29:59.000+00:00"] }
         }
       }
     }
@@ -544,8 +544,8 @@ People who paid before due date:loans
     "$match": {
       "$expr": {
         "$and": [
-          { "$gte": [ "$dueDate", "$startDate" ] },
-          { "$lte": [ "$dueDate", "$endDate" ] }
+          { "$gte": ["$dueDate", "$startDate"] },
+          { "$lte": ["$dueDate", "$endDate"] }
         ]
       }
     }
@@ -566,9 +566,9 @@ People who paid before due date:loans
           "as": "p",
           "cond": {
             "$and": [
-              { "$ne": [ "$$p.paymentType", "DISBURSEMENT" ] },
-              { "$eq": [ "$$p.status", "SUCCESS" ] },
-              { "$lt": [ "$$p.paymentDate", "$startDate" ] }
+              { "$ne": ["$$p.paymentType", "DISBURSEMENT"] },
+              { "$eq": ["$$p.status", "SUCCESS"] },
+              { "$lt": ["$$p.paymentDate", "$startDate"] }
             ]
           }
         }
@@ -577,8 +577,17 @@ People who paid before due date:loans
   },
   {
     "$match": {
-      "$expr": {
-        "$gt": [ { "$size": "$earlyPayments" }, 0 ]
+      "$expr": { "$gt": [{ "$size": "$earlyPayments" }, 0] }
+    }
+  },
+  {
+    "$addFields": {
+      "earlyPaymentTotal": {
+        "$reduce": {
+          "input": "$earlyPayments",
+          "initialValue": 0,
+          "in": { "$add": ["$$value", { "$ifNull": ["$$this.amount", 0] }] }
+        }
       }
     }
   },
@@ -589,14 +598,15 @@ People who paid before due date:loans
       "loanNumber": 1,
       "dueDate": 1,
       "status": 1,
-      "earlyPaymentDate": { "$arrayElemAt": [ "$earlyPayments.paymentDate", 0 ] },
-      "earlyPaymentAmount": { "$arrayElemAt": [ "$earlyPayments.amount", 0 ] },
-      "earlyPaymentType": { "$arrayElemAt": [ "$earlyPayments.paymentType", 0 ] }
+      "earlyPaymentDate": { "$arrayElemAt": ["$earlyPayments.paymentDate", 0] },
+      "earlyPaymentAmount": { "$arrayElemAt": ["$earlyPayments.amount", 0] },
+      "earlyPaymentType": { "$arrayElemAt": ["$earlyPayments.paymentType", 0] },
+      "earlyPaymentTotal": 1,
+      "earlyPaymentCount": { "$size": "$earlyPayments" }
     }
   },
   { "$sort": { "dueDate": 1 } }
 ]
-
 
 
 Per Day Loans:Loans

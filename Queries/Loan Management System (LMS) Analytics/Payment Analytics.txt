@@ -1,0 +1,147 @@
+many things:payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": {"$ne": "DISBURSEMENT"}}},
+  {"$group": {
+    "_id": null,
+    "totalPayments": {"$sum": 1},
+    "totalCollected": {"$sum": "$amount"},
+    "avgPayment": {"$avg": "$amount"},
+    "principalRecovered": {"$sum": {"$ifNull": ["$allocation.principal", 0]}},
+    "interestRecovered": {"$sum": {"$ifNull": ["$allocation.interest", 0]}},
+    "lateChargesRecovered": {"$sum": {"$ifNull": ["$allocation.lateCharges", 0]}},
+    "emiCount": {"$sum": {"$cond": [{"$eq": ["$paymentType", "EMI"]}, 1, 0]}},
+    "foreclosureCount": {"$sum": {"$cond": [{"$eq": ["$paymentType", "FORECLOSURE"]}, 1, 0]}},
+    "partPaymentCount": {"$sum": {"$cond": [{"$eq": ["$paymentType", "PART_PAYMENT"]}, 1, 0]}},
+    "repaymentCount": {"$sum": {"$cond": [{"$eq": ["$paymentType", "REPAYMENT"]}, 1, 0]}}
+  }},
+  {"$project": {"_id": 0}}
+]
+
+
+
+Daily Collection Trend:payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": {"$ne": "DISBURSEMENT"}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$paymentDate"}},
+    "totalCollected": {"$sum": "$amount"},
+    "paymentCount": {"$sum": 1}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"date": "$_id", "totalCollected": 1, "paymentCount": 1, "_id": 0}}
+]
+
+
+
+Payin (Razorpay Orders) Status By count/Amount:payins
+[
+  {"$group": {"_id": "$status", "count": {"$sum": 1}, "totalAmount": {"$sum": "$amount"}}},
+  {"$project": {"status": "$_id", "count": 1, "totalAmount": 1, "_id": 0}}
+]
+
+
+
+Payment Allocation Breakdown:payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": {"$ne": "DISBURSEMENT"}}},
+  {"$group": {
+    "_id": null,
+    "totalPrincipal": {"$sum": {"$ifNull": ["$allocation.principal", 0]}},
+    "totalInterest": {"$sum": {"$ifNull": ["$allocation.interest", 0]}},
+    "totalLateCharges": {"$sum": {"$ifNull": ["$allocation.lateCharges", 0]}},
+    "totalBounceCharges": {"$sum": {"$ifNull": ["$allocation.bounceCharges", 0]}},
+    "totalOther": {"$sum": {"$ifNull": ["$allocation.otherCharges", 0]}}
+  }},
+  {"$project": {"_id": 0}}
+]
+
+
+
+
+Payment Link Analytics By count/Amount:paymentlinks
+[
+  {"$group": {
+    "_id": "$status",
+    "count": {"$sum": 1},
+    "totalAmount": {"$sum": "$amount"},
+    "totalPaid": {"$sum": "$amountPaid"}
+  }},
+  {"$sort": {"count": -1}},
+  {"$project": {"status": "$_id", "count": 1, "totalAmount": 1, "totalPaid": 1, "_id": 0}}
+]
+
+
+
+
+Payment Link Conversion Rate:paymentlinks
+[
+  {"$group": {
+    "_id": null,
+    "total": {"$sum": 1},
+    "paid": {"$sum": {"$cond": [{"$eq": ["$status", "PAID"]}, 1, 0]}},
+    "partiallyPaid": {"$sum": {"$cond": [{"$eq": ["$status", "PARTIALLY_PAID"]}, 1, 0]}}
+  }},
+  {"$project": {
+    "_id": 0,
+    "total": 1,
+    "paid": 1,
+    "conversionRate": {"$multiply": [{"$divide": [{"$add": ["$paid", "$partiallyPaid"]}, {"$max": ["$total", 1]}]}, 100]}
+  }}
+]
+
+
+
+Payment Mode Distribution By count/Amount:payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": {"$ne": "DISBURSEMENT"}}},
+  {"$group": {"_id": {"$ifNull": ["$paymentMode", "UNKNOWN"]}, "count": {"$sum": 1}, "totalAmount": {"$sum": "$amount"}}},
+  {"$sort": {"totalAmount": -1}},
+  {"$project": {"paymentMode": "$_id", "count": 1, "totalAmount": 1, "_id": 0}}
+]
+
+
+
+
+Payment Proof Verification:paymentproofs
+[
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]
+
+
+
+
+Payment Success/Failure Rate:payments
+[
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]
+
+
+
+Payment Type Distribution (with Allocation):payments
+[
+  {"$match": {"status": "SUCCESS", "paymentType": {"$ne": "DISBURSEMENT"}}},
+  {"$group": {
+    "_id": "$paymentType",
+    "count": {"$sum": 1},
+    "totalAmount": {"$sum": "$amount"},
+    "principalAlloc": {"$sum": {"$ifNull": ["$allocation.principal", 0]}},
+    "interestAlloc": {"$sum": {"$ifNull": ["$allocation.interest", 0]}},
+    "lateChargesAlloc": {"$sum": {"$ifNull": ["$allocation.lateCharges", 0]}}
+  }},
+  {"$sort": {"totalAmount": -1}},
+  {"$project": {
+    "paymentType": "$_id",
+    "count": 1,
+    "totalAmount": 1,
+    "principalAlloc": 1,
+    "interestAlloc": 1,
+    "lateChargesAlloc": 1,
+    "_id": 0
+  }}
+]
+
+
+
+

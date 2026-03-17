@@ -5,10 +5,10 @@ Capital Rotation Revenue Advantage (Theoretical):loans
     "_id": "$tenure",
     "loanCount": {"$sum": 1},
     "totalDisbursed": {"$sum": {"$ifNull": ["$disbursementAmount", 0]}},
-    "totalPrincipal": {"$sum": {"$ifNull": ["$loanAmount", 0]}},
+    "totalPrincipal": {"$sum": {"$ifNull": ["$principalAmount", 0]}},
     "totalProcessingFee": {"$sum": {"$ifNull": ["$processingFee", 0]}},
-    "totalGST": {"$sum": {"$ifNull": ["$gstAmount", 0]}},
-    "totalInterest": {"$sum": {"$ifNull": ["$interestAmount", 0]}},
+    "totalGST": {"$sum": {"$ifNull": ["$gstOnProcessingFee", 0]}},
+    "totalInterest": {"$sum": {"$ifNull": ["$totalInterest", 0]}},
     "avgDisbursement": {"$avg": {"$ifNull": ["$disbursementAmount", 0]}}
   }},
   {"$project": {
@@ -29,17 +29,19 @@ Capital Rotation Revenue Advantage (Theoretical):loans
 
 
 
+
+
 Tenure Mix Distribution:loans
 [
-  {"$match": {"isDeleted": {"$ne": true}, "tenure": {"$exists": true}}},
+  {"$match": {"isDeleted": {"$ne": true}, "tenure": {"$exists": true, $in:[7, 15, 30]}}},
   {"$group": {
     "_id": "$tenure",
     "loanCount": {"$sum": 1},
     "totalDisbursed": {"$sum": {"$ifNull": ["$disbursementAmount", 0]}},
-    "totalPrincipal": {"$sum": {"$ifNull": ["$loanAmount", 0]}},
+    "totalPrincipal": {"$sum": {"$ifNull": ["$principalAmount", 0]}},
     "closedCount": {"$sum": {"$cond": [{"$eq": ["$status", "CLOSED"]}, 1, 0]}},
     "overdueCount": {"$sum": {"$cond": [{"$in": ["$status", ["OVERDUE", "NPA"]]}, 1, 0]}},
-    "avgLoanAmount": {"$avg": {"$ifNull": ["$loanAmount", 0]}}
+    "avgLoanAmount": {"$avg": {"$ifNull": ["$principalAmount", 0]}}
   }},
   {"$sort": {"loanCount": -1}},
   {"$project": {
