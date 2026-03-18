@@ -1,0 +1,73 @@
+Q1: Agent Summary Table
+Collection: users Viz: Table
+
+[
+  {"$match": {"isActive": true, "isDeleted": {"$ne": true}}},
+  {"$project": {
+    "fullName": 1,
+    "email": 1,
+    "role": 1,
+    "department": 1,
+    "branch": 1,
+    "employmentStatus": 1,
+    "workLocation": 1,
+    "totalApplicationsProcessed": 1,
+    "totalLoansApproved": 1,
+    "totalCollectionCallsMade": 1,
+    "lastLoginAt": 1
+  }},
+  {"$sort": {"totalApplicationsProcessed": -1}}
+]
+Q2: Agent Role Distribution
+Collection: users Viz: Pie chart
+
+[
+  {"$match": {"isActive": true, "isDeleted": {"$ne": true}}},
+  {"$group": {"_id": "$role", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"role": "$_id", "count": 1, "_id": 0}}
+]
+Q3: Applications Processed Per Agent
+Collection: applications Viz: Bar chart
+
+[
+  {"$match": {"assignedTo": {"$exists": true}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": "$assignedTo",
+    "totalProcessed": {"$sum": 1},
+    "approved": {"$sum": {"$cond": [{"$in": ["$status", ["APPROVED", "DISBURSED", "CLOSED"]]}, 1, 0]}},
+    "rejected": {"$sum": {"$cond": [{"$eq": ["$status", "REJECTED"]}, 1, 0]}}
+  }},
+  {"$lookup": {"from": "users", "localField": "_id", "foreignField": "_id", "as": "agent"}},
+  {"$unwind": {"path": "$agent", "preserveNullAndEmptyArrays": true}},
+  {"$project": {
+    "agentName": {"$ifNull": ["$agent.fullName", "Unknown"]},
+    "totalProcessed": 1,
+    "approved": 1,
+    "rejected": 1,
+    "approvalRate": {"$multiply": [{"$divide": ["$approved", {"$max": ["$totalProcessed", 1]}]}, 100]},
+    "_id": 0
+  }},
+  {"$sort": {"totalProcessed": -1}}
+]
+Q4: Agent Login Activity (Last 30 Days)
+Collection: sessions Viz: Table
+
+[
+  {"$match": {"createdAt": {"$gte": {"$date": "2026-01-20T00:00:00Z"}}}},
+  {"$group": {
+    "_id": "$userId",
+    "loginCount": {"$sum": 1},
+    "lastLogin": {"$max": "$createdAt"}
+  }},
+  {"$lookup": {"from": "users", "localField": "_id", "foreignField": "_id", "as": "user"}},
+  {"$unwind": {"path": "$user", "preserveNullAndEmptyArrays": true}},
+  {"$project": {
+    "agentName": "$user.fullName",
+    "role": "$user.role",
+    "loginCount": 1,
+    "lastLogin": 1,
+    "_id": 0
+  }},
+  {"$sort": {"loginCount": -1}}
+]

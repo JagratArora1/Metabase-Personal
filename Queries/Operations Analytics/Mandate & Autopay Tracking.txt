@@ -1,0 +1,75 @@
+Q24: Mandate Overview
+Collection: mandates Viz: Number cards row
+
+[
+  {"$group": {
+    "_id": null,
+    "total": {"$sum": 1},
+    "created": {"$sum": {"$cond": [{"$eq": ["$status", "created"]}, 1, 0]}},
+    "active": {"$sum": {"$cond": [{"$eq": ["$status", "active"]}, 1, 0]}},
+    "cancelled": {"$sum": {"$cond": [{"$eq": ["$status", "cancelled"]}, 1, 0]}},
+    "expired": {"$sum": {"$cond": [{"$eq": ["$status", "expired"]}, 1, 0]}},
+    "failed": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}}
+  }},
+  {"$project": {
+    "_id": 0,
+    "total": 1,
+    "created": 1,
+    "active": 1,
+    "activationRate": {"$multiply": [{"$divide": ["$active", {"$max": ["$total", 1]}]}, 100]},
+    "cancelled": 1,
+    "expired": 1,
+    "failed": 1
+  }}
+]
+Key Insight: Only 2.1% activation rate (17/824)
+
+Q25: Mandate Status Distribution
+Collection: mandates Viz: Pie chart
+
+[
+  {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"status": "$_id", "count": 1, "_id": 0}}
+]
+Q26: Mandate Type Distribution
+Collection: mandates Viz: Pie chart
+
+[
+  {"$group": {"_id": {"$ifNull": ["$authType", "UNKNOWN"]}, "count": {"$sum": 1}}},
+  {"$sort": {"count": -1}},
+  {"$project": {"authType": "$_id", "count": 1, "_id": 0}}
+]
+Q27: Mandate Creation Trend (Daily)
+Collection: mandates Viz: Line chart
+
+[
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$createdAt"}},
+    "created": {"$sum": 1},
+    "activated": {"$sum": {"$cond": [{"$eq": ["$status", "active"]}, 1, 0]}}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {"date": "$_id", "created": 1, "activated": 1, "_id": 0}}
+]
+Q28: Mandate Debit Performance
+Collection: mandates Viz: Table
+
+[
+  {"$match": {"totalDebits": {"$gt": 0}}},
+  {"$group": {
+    "_id": null,
+    "totalDebits": {"$sum": "$totalDebits"},
+    "successfulDebits": {"$sum": "$successfulDebits"},
+    "failedDebits": {"$sum": "$failedDebits"},
+    "totalAmountDebited": {"$sum": "$totalAmountDebited"}
+  }},
+  {"$project": {
+    "_id": 0,
+    "totalDebits": 1,
+    "successfulDebits": 1,
+    "failedDebits": 1,
+    "debitSuccessRate": {"$multiply": [{"$divide": ["$successfulDebits", {"$max": ["$totalDebits", 1]}]}, 100]},
+    "totalAmountDebited": 1
+  }}
+]
