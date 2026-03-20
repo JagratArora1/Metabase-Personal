@@ -1,0 +1,248 @@
+Average Days to Close by Product Segment:loans
+[
+  {
+    "$match": {
+      "status": "CLOSED",
+      "closureDate": { "$exists": true },
+      "disbursementDate": { "$exists": true }
+    }
+  },
+  {
+    "$addFields": {
+      "daysToClose": {
+        "$divide": [{ "$subtract": ["$closureDate", "$disbursementDate"] }, 86400000]
+      },
+      "tenureLabel": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$tenure", 7] }, "then": "7-day" },
+            { "case": { "$eq": ["$tenure", 15] }, "then": "15-day" },
+            { "case": { "$eq": ["$tenure", 30] }, "then": "30-day" },
+            { "case": { "$gte": ["$tenure", 60] }, "then": "60+ day" }
+          ],
+          "default": "Other"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$tenureLabel",
+      "count": { "$sum": 1 },
+      "avgDaysSum": { "$sum": "$daysToClose" },
+      "minDays": { "$min": "$daysToClose" },
+      "maxDays": { "$max": "$daysToClose" },
+      "earlyClosures": {
+        "$sum": { "$cond": [{ "$lt": ["$daysToClose", "$tenure"] }, 1, 0] }
+      }
+    }
+  },
+  {
+    "$project": {
+      "tenure": "$_id",
+      "closedLoans": "$count",
+      "avgDaysToClose": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$avgDaysSum", { "$max": ["$count", 1] }] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "minDays": {
+        "$let": {
+          "vars": { "raw": { "$multiply": ["$minDays", 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "maxDays": {
+        "$let": {
+          "vars": { "raw": { "$multiply": ["$maxDays", 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "earlyClosureRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$earlyClosures", { "$max": ["$count", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "avgDaysToClose": 1 } }
+]
+
+
+
+
+Closure Rate Trend by Week:loans
+[
+  { "$match": { "status": { "$in": ["CLOSED", "ACTIVE", "OVERDUE"] } } },
+  {
+    "$addFields": {
+      "originDate": {
+        "$dateToString": { "format": "%Y-%m-%d", "date": "$disbursementDate" }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$originDate",
+      "totalLoans": { "$sum": 1 },
+      "closed": { "$sum": { "$cond": [{ "$eq": ["$status", "CLOSED"] }, 1, 0] } },
+      "overdue": { "$sum": { "$cond": [{ "$eq": ["$status", "OVERDUE"] }, 1, 0] } },
+      "active": { "$sum": { "$cond": [{ "$eq": ["$status", "ACTIVE"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "date": "$_id",
+      "totalLoans": 1,
+      "closed": 1,
+      "overdue": 1,
+      "active": 1,
+      "closureRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$closed", { "$max": ["$totalLoans", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "date": 1 } }
+]
+
+
+Closure Type Distribution:loans
+[
+  { "$match": { "status": "CLOSED", "isDeleted": { "$ne": true } } },
+  {
+    "$addFields": {
+      "daysToClose": {
+        "$divide": [{ "$subtract": ["$updatedAt", "$disbursementDate"] }, 86400000]
+      },
+      "closureType": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lt": ["$updatedAt", "$maturityDate"] }, "then": "Early Closure" },
+            { "case": { "$gt": [{ "$ifNull": ["$dpd", 0] }, 0] }, "then": "Late Closure (Was Overdue)" }
+          ],
+          "default": "On-Time Closure"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$closureType",
+      "count": { "$sum": 1 },
+      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
+      "avgDPDSum": { "$sum": { "$ifNull": ["$dpd", 0] } },
+      "avgDaysSum": { "$sum": "$daysToClose" },
+      "avgTenureSum": { "$sum": "$tenure" }
+    }
+  },
+  {
+    "$project": {
+      "closureType": "$_id",
+      "loanCount": "$count",
+      "totalDisbursed": {
+        "$subtract": ["$totalDisbursed", { "$mod": ["$totalDisbursed", 1] }]
+      },
+      "avgDPDAtClosure": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$avgDPDSum", { "$max": ["$count", 1] }] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgDaysToClose": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$avgDaysSum", { "$max": ["$count", 1] }] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgTenure": {
+        "$subtract": [
+          { "$divide": ["$avgTenureSum", { "$max": ["$count", 1] }] },
+          { "$mod": [{ "$divide": ["$avgTenureSum", { "$max": ["$count", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "loanCount": -1 } }
+]
+
+
+
+
+Foreclosure Analysis:payments
+[
+  {
+    "$match": {
+      "paymentType": { "$in": ["FORECLOSURE", "FULL_PAYMENT", "PREPAYMENT"] },
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "$lookup": {
+      "from": "loans",
+      "localField": "loanId",
+      "foreignField": "_id",
+      "as": "loan"
+    }
+  },
+  { "$unwind": { "path": "$loan", "preserveNullAndEmptyArrays": true } },
+  {
+    "$group": {
+      "_id": { "$dateToString": { "format": "%Y-%m", "date": "$paymentDate" } },
+      "foreclosureCount": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" },
+      "amountSum": { "$sum": "$amount" },
+      "amountCount": { "$sum": 1 },
+      "avgTenureSum": { "$sum": { "$ifNull": ["$loan.tenure", 0] } },
+      "avgTenureCount": { "$sum": { "$cond": [{ "$ne": ["$loan.tenure", null] }, 1, 0] } },
+      "daysSum": {
+        "$sum": {
+          "$divide": [
+            { "$subtract": ["$paymentDate", { "$ifNull": ["$loan.disbursementDate", "$paymentDate"] }] },
+            86400000
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "month": "$_id",
+      "foreclosureCount": 1,
+      "totalAmount": {
+        "$subtract": ["$totalAmount", { "$mod": ["$totalAmount", 1] }]
+      },
+      "avgAmount": {
+        "$subtract": [
+          { "$divide": ["$amountSum", { "$max": ["$amountCount", 1] }] },
+          { "$mod": [{ "$divide": ["$amountSum", { "$max": ["$amountCount", 1] }] }, 1] }
+        ]
+      },
+      "avgOriginalTenure": {
+        "$subtract": [
+          { "$divide": ["$avgTenureSum", { "$max": ["$avgTenureCount", 1] }] },
+          { "$mod": [{ "$divide": ["$avgTenureSum", { "$max": ["$avgTenureCount", 1] }] }, 1] }
+        ]
+      },
+      "avgDaysToClosure": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$daysSum", { "$max": ["$foreclosureCount", 1] }] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "month": -1 } }
+]

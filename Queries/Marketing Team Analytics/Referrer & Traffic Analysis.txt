@@ -1,0 +1,88 @@
+Browser Distribution:user journeys
+[
+  {
+    "$group": {
+      "_id": { "$ifNull": [{ "$arrayElemAt": ["$sessions.deviceInfo.browser", 0] }, "Unknown"] },
+      "visitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "browser": "$_id",
+      "visitors": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "visitors": -1 } }
+]
+
+
+
+
+Geographic Distribution:customers
+[
+  {
+    "$match": {
+      "state": { "$exists": true, "$ne": null },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$state",
+      "customers": { "$sum": 1 }
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "State": "$_id",
+      "customers": 1
+    }
+  },
+  { "$sort": { "customers": -1 } }
+]
+
+
+
+
+Top Referrers:user journeys
+[
+  { "$match": { "referrer": { "$exists": true, "$ne": null, "$ne": "" } } },
+  {
+    "$group": {
+      "_id": "$referrer",
+      "visitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "referrer": "$_id",
+      "visitors": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "visitors": -1 } },
+  { "$limit": 30 }
+]
+

@@ -1,0 +1,76 @@
+Email Delivery Trend:email logs
+[
+  {"$group": {
+    "_id": {
+      "date": {"$dateToString": {"format": "%Y-%m-%d", "date": "$createdAt"}},
+      "status": "$status"
+    },
+    "count": {"$sum": 1}
+  }},
+  {"$project": {
+    "date": "$_id.date",
+    "status": "$_id.status",
+    "count": 1,
+    "_id": 0
+  }},
+  {"$sort": {"date": 1}}
+]
+
+
+
+
+Email Failure Analysis:email logs
+[
+  {"$match": {"status": {"$in": ["FAILED", "BOUNCED"]}}},
+  {"$group": {
+    "_id": {
+      "status": "$status",
+      "error": {"$ifNull": ["$error", "$failureReason"]}
+    },
+    "count": {"$sum": 1}
+  }},
+  {"$project": {
+    "status": "$_id.status",
+    "errorReason": {"$ifNull": ["$_id.error", "Unknown"]},
+    "count": 1,
+    "_id": 0
+  }},
+  {"$sort": {"count": -1}}
+]
+
+
+
+
+Email Volume by Type:email logs
+[
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$type", "$subject"] },
+      "total": { "$sum": 1 },
+      "sent": { "$sum": { "$cond": [{ "$eq": ["$status", "SENT"] }, 1, 0] } },
+      "delivered": { "$sum": { "$cond": [{ "$eq": ["$status", "DELIVERED"] }, 1, 0] } },
+      "failed": { "$sum": { "$cond": [{ "$eq": ["$status", "FAILED"] }, 1, 0] } },
+      "bounced": { "$sum": { "$cond": [{ "$eq": ["$status", "BOUNCED"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "emailType": "$_id",
+      "total": 1,
+      "sent": 1,
+      "delivered": 1,
+      "failed": 1,
+      "bounced": 1,
+      "deliveryRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": [{ "$add": ["$sent", "$delivered"] }, { "$max": ["$total", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "total": -1 } }
+]

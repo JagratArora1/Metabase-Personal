@@ -1,0 +1,126 @@
+Applied:applications
+[
+  { "$group": { "_id": "$customerId" } },
+  { "$count": "value" },
+  { "$addFields": { "step": "4 - Applied" } }
+]
+
+
+Approved:applications
+[
+  { "$match": { "status": { "$in": ["APPROVED", "DISBURSED"] } } },
+  { "$group": { "_id": "$customerId" } },
+  { "$count": "value" },
+  { "$addFields": { "step": "5 - Approved" } }
+]
+
+
+
+Daily New Customer Registrations:customers
+[
+  {"$match": {"createdAt": {"$exists": true}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$createdAt"}},
+    "newCustomers": {"$sum": 1}
+  }},
+  {"$project": {
+    "date": "$_id",
+    "newCustomers": 1,
+    "_id": 0
+  }},
+  {"$sort": {"date": 1}}
+]
+
+
+
+Disbursed:loans
+[
+  { "$group": { "_id": "$customerId" } },
+  { "$count": "value" },
+  { "$addFields": { "step": "6 - Disbursed" } }
+]
+
+
+
+
+KYC Complete:customers
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true },
+      "kycStatus": "COMPLETED"
+    }
+  },
+  { "$count": "value" },
+  { "$addFields": { "step": "3 - KYC Complete" } }
+]
+
+
+
+
+KYC Started:customers
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true },
+      "kycStatus": { "$ne": null, "$ne": "PENDING" }
+    }
+  },
+  { "$count": "value" },
+  { "$addFields": { "step": "2 - KYC Started" } }
+]
+
+
+
+
+Registered Customers:customers
+[
+  { "$match": { "isDeleted": { "$ne": true } } },
+  { "$count": "value" },
+  { "$addFields": { "step": "1 - Registered" } }
+]
+
+
+
+
+Weekly Acquisition Trend with Conversion:customers
+[
+  { "$match": { "createdAt": { "$exists": true }, "isDeleted": { "$ne": true } } },
+  {
+    "$addFields": {
+      "week": { "$dateToString": { "format": "%Y-%m-%d", "date": "$createdAt" } }
+    }
+  },
+  {
+    "$lookup": {
+      "from": "loans",
+      "localField": "_id",
+      "foreignField": "customerId",
+      "as": "loans"
+    }
+  },
+  {
+    "$group": {
+      "_id": "$week",
+      "registrations": { "$sum": 1 },
+      "withLoans": { "$sum": { "$cond": [{ "$gt": [{ "$size": "$loans" }, 0] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "date": "$_id",
+      "registrations": 1,
+      "conversions": "$withLoans",
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$withLoans", { "$max": ["$registrations", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "date": 1 } }
+]

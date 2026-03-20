@@ -1,0 +1,174 @@
+Collection Efficiency Trend:payments
+[
+  { "$match": { "status": "SUCCESS", "paymentDate": { "$exists": true } } },
+  {
+    "$group": {
+      "_id": { "$dateToString": { "format": "%Y-%m-%d", "date": "$paymentDate" } },
+      "totalCollected": { "$sum": "$amount" },
+      "paymentCount": { "$sum": 1 },
+      "avgPaymentSum": { "$sum": "$amount" }
+    }
+  },
+  {
+    "$project": {
+      "day": "$_id",
+      "totalCollected": {
+        "$subtract": ["$totalCollected", { "$mod": ["$totalCollected", 1] }]
+      },
+      "paymentCount": 1,
+      "avgPayment": {
+        "$subtract": [
+          { "$divide": ["$avgPaymentSum", { "$max": ["$paymentCount", 1] }] },
+          { "$mod": [{ "$divide": ["$avgPaymentSum", { "$max": ["$paymentCount", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "day": 1 } }
+]
+
+
+
+
+Expected vs Actual Collections (Monthly):loans
+[
+  { "$match": { "maturityDate": { "$exists": true, "$ne": null } } },
+  {
+    "$addFields": {
+      "dueMonth": { "$dateToString": { "format": "%Y-%m", "date": "$maturityDate" } }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$dueMonth",
+      "expectedCollection": { "$sum": "$totalRepayment" },
+      "loansDue": { "$sum": 1 },
+      "closedOnTime": {
+        "$sum": {
+          "$cond": [
+            { "$and": [
+              { "$eq": ["$status", "CLOSED"] },
+              { "$lte": [{ "$ifNull": ["$dpd", 0] }, 0] }
+            ]},
+            1, 0
+          ]
+        }
+      },
+      "closedLate": {
+        "$sum": {
+          "$cond": [
+            { "$and": [
+              { "$eq": ["$status", "CLOSED"] },
+              { "$gt": [{ "$ifNull": ["$dpd", 0] }, 0] }
+            ]},
+            1, 0
+          ]
+        }
+      },
+      "stillActive": {
+        "$sum": {
+          "$cond": [{ "$in": ["$status", ["ACTIVE", "OVERDUE", "NPA"]] }, 1, 0]
+        }
+      },
+      "actualCollection": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$status", "CLOSED"] }, "$totalRepayment", 0]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "month": "$_id",
+      "expectedCollection": {
+        "$subtract": ["$expectedCollection", { "$mod": ["$expectedCollection", 1] }]
+      },
+      "actualCollection": {
+        "$subtract": ["$actualCollection", { "$mod": ["$actualCollection", 1] }]
+      },
+      "loansDue": 1,
+      "closedOnTime": 1,
+      "closedLate": 1,
+      "stillActive": 1,
+      "collectionRate": {
+        "$let": {
+          "vars": {
+            "raw": {
+              "$multiply": [
+                { "$divide": ["$actualCollection", { "$max": ["$expectedCollection", 1] }] },
+                1000
+              ]
+            }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "month": 1 } }
+]
+
+
+
+
+
+Net Cash Flow Projection (Collections):loans
+[
+  { "$match": { "status": "CLOSED" } },
+  {
+    "$group": {
+      "_id": {
+        "$dateToString": {
+          "format": "%Y-%m",
+          "date": { "$ifNull": ["$closedDate", "$updatedAt"] }
+        }
+      },
+      "totalCollected": { "$sum": "$totalOutstanding" },
+      "closedCount": { "$sum": 1 }
+    }
+  },
+  {
+    "$project": {
+      "month": "$_id",
+      "totalCollected": {
+        "$subtract": ["$totalCollected", { "$mod": ["$totalCollected", 1] }]
+      },
+      "closedCount": 1,
+      "_id": 0
+    }
+  },
+  { "$sort": { "month": 1 } }
+]
+
+
+
+
+Net Cash Flow Projection (Disbursements):loans
+[
+  {
+    "$match": {
+      "disbursementDate": { "$exists": true },
+      "disbursementAmount": { "$gt": 0 }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "$dateToString": { "format": "%Y-%m", "date": "$disbursementDate" } },
+      "totalDisbursed": { "$sum": "$disbursementAmount" },
+      "loanCount": { "$sum": 1 }
+    }
+  },
+  {
+    "$project": {
+      "month": "$_id",
+      "totalDisbursed": {
+        "$subtract": ["$totalDisbursed", { "$mod": ["$totalDisbursed", 1] }]
+      },
+      "loanCount": 1,
+      "_id": 0
+    }
+  },
+  { "$sort": { "month": 1 } }
+]

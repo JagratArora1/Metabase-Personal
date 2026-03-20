@@ -1,0 +1,112 @@
+Agent Collection Performance vs Commission:collection activities
+[
+  { "$match": { "agentId": { "$exists": true, "$ne": null } } },
+  {
+    "$group": {
+      "_id": "$agentId",
+      "agentName": { "$first": "$agentName" },
+      "totalActivities": { "$sum": 1 },
+      "calls": {
+        "$sum": { "$cond": [{ "$eq": ["$activityType", "CALL"] }, 1, 0] }
+      },
+      "answered": {
+        "$sum": { "$cond": [{ "$eq": ["$outcome", "ANSWERED"] }, 1, 0] }
+      },
+      "ptpMade": {
+        "$sum": { "$cond": [{ "$eq": ["$ptpGiven", true] }, 1, 0] }
+      },
+      "refused": {
+        "$sum": { "$cond": [{ "$eq": ["$outcome", "REFUSED"] }, 1, 0] }
+      },
+      "paymentProofs": {
+        "$sum": { "$cond": [{ "$eq": ["$activityType", "PAYMENT_PROOF_UPLOAD"] }, 1, 0] }
+      },
+      "successful": {
+        "$sum": { "$cond": [{ "$eq": ["$isSuccessful", true] }, 1, 0] }
+      },
+      "totalCollected": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$isSuccessful", true] },
+            { "$toDouble": { "$ifNull": ["$amount", "0"] } },
+            0
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "agentName": 1,
+      "totalActivities": 1,
+      "calls": 1,
+      "answered": 1,
+      "answerRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$answered", { "$max": ["$calls", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "ptpMade": 1,
+      "ptpConversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$ptpMade", { "$max": ["$answered", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "paymentProofs": 1,
+      "successful": 1,
+      "successRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$successful", { "$max": ["$totalActivities", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "totalCollected": {
+        "$subtract": ["$totalCollected", { "$mod": ["$totalCollected", 1] }]
+      },
+      "refused": 1,
+      "_id": 0
+    }
+  },
+  { "$sort": { "totalCollected": -1 } }
+]
+
+
+
+
+Commission Rules Overview:Commission Rules
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true },
+      "isActive": true
+    }
+  },
+  {
+    "$project": {
+      "ruleName": "$commissionName",
+      "commissionCode": 1,
+      "commissionType": 1,
+      "calculationBasis": 1,
+      "minCommission": 1,
+      "maxCommission": 1,
+      "targetAchievementBonus": 1,
+      "exceededTargetBonus": 1,
+      "payoutFrequency": 1,
+      "payoutTimining": 1,
+      "applicableRole": 1,
+      "status": 1,
+      "isActive": 1,
+      "commissionId": 1,
+      "_id": 0
+    }
+  },
+  { "$sort": { "commissionType": 1, "minCommission": -1 } }
+]

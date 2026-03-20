@@ -1,0 +1,96 @@
+Reminder-to-Payment Correlation:Payment links
+
+[
+  { "$match": { "status": "PAID" } },
+  {
+    "$addFields": {
+      "timeToPay": {
+        "$divide": [
+          { "$subtract": [{ "$ifNull": ["$paidAt", "$updatedAt"] }, "$createdAt"] },
+          86400000
+        ]
+      }
+    }
+  },
+  {
+    "$addFields": {
+      "paymentSpeed": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lte": ["$timeToPay", 0.042] }, "then": "Within 1 hour" },
+            { "case": { "$lte": ["$timeToPay", 0.5] }, "then": "Within 12 hours" },
+            { "case": { "$lte": ["$timeToPay", 1] }, "then": "Within 1 day" },
+            { "case": { "$lte": ["$timeToPay", 3] }, "then": "1-3 days" },
+            { "case": { "$lte": ["$timeToPay", 7] }, "then": "3-7 days" }
+          ],
+          "default": "7+ days"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$paymentSpeed",
+      "count": { "$sum": 1 },
+      "totalAmount": { "$sum": "$amount" },
+      "amountSum": { "$sum": "$amount" },
+      "amountCount": { "$sum": 1 }
+    }
+  },
+  {
+    "$project": {
+      "paymentSpeed": "$_id",
+      "payments": "$count",
+      "totalAmount": {
+        "$subtract": ["$totalAmount", { "$mod": ["$totalAmount", 1] }]
+      },
+      "avgAmount": {
+        "$subtract": [
+          { "$divide": ["$amountSum", { "$max": ["$amountCount", 1] }] },
+          { "$mod": [{ "$divide": ["$amountSum", { "$max": ["$amountCount", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "payments": -1 } }
+]
+
+
+
+
+
+Reminder Type Impact on Collection:notifications
+[
+  {
+    "$match": {
+      "type": { "$regex": "REMINDER|EMI|OVERDUE|DUE", "$options": "i" }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$type",
+      "sent": { "$sum": 1 },
+      "read": {
+        "$sum": { "$cond": [{ "$ne": [{ "$ifNull": ["$readAt", null] }, null] }, 1, 0] }
+      }
+    }
+  },
+  {
+    "$project": {
+      "reminderType": "$_id",
+      "totalSent": "$sent",
+      "totalRead": "$read",
+      "readRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$read", { "$max": ["$sent", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "totalSent": -1 } }
+]

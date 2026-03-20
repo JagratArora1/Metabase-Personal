@@ -1,0 +1,104 @@
+Cumulative AUM Growth:loans
+[
+  {
+    "$match": {
+      "disbursementDate": { "$exists": true },
+      "disbursementAmount": { "$gt": 0 }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "$dateToString": { "format": "%Y-%m-%d", "date": "$disbursementDate" } },
+      "newLoans": { "$sum": 1 },
+      "newDisbursement": { "$sum": "$disbursementAmount" }
+    }
+  },
+  { "$sort": { "_id": 1 } },
+  {
+    "$project": {
+      "date": "$_id",
+      "dailyLoans": "$newLoans",
+      "dailyDisbursement": {
+        "$subtract": ["$newDisbursement", { "$mod": ["$newDisbursement", 1] }]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "date": 1 } }
+]
+
+
+
+
+Customer Acquisition Velocity:customers
+[
+  {"$match": {"createdAt": {"$exists": true}, "isDeleted": {"$ne": true}}},
+  {"$group": {
+    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$createdAt"}},
+    "newCustomers": {"$sum": 1}
+  }},
+  {"$sort": {"_id": 1}},
+  {"$project": {
+    "date": "$_id",
+    "newCustomers": 1,
+    "_id": 0
+  }}
+]
+
+
+
+
+Week-over-Week Growth Metrics:loans
+[
+  { "$match": { "createdAt": { "$exists": true } } },
+  {
+    "$lookup": {
+      "from": "applications",
+      "localField": "applicationId",
+      "foreignField": "_id",
+      "as": "application"
+    }
+  },
+  { "$unwind": { "path": "$application", "preserveNullAndEmptyArrays": true } },
+  {
+    "$group": {
+      "_id": { "$dateToString": { "format": "%Y-%m-%d", "date": "$createdAt" } },
+      "newLoans": { "$sum": 1 },
+      "disbursedAmount": { "$sum": "$disbursementAmount" },
+      "avgLoanSum": { "$sum": "$disbursementAmount" },
+      "cibilSum": {
+        "$sum": {
+          "$cond": [{ "$gt": [{ "$ifNull": ["$application.cibilScore", 0] }, 0] }, "$application.cibilScore", 0]
+        }
+      },
+      "cibilCount": {
+        "$sum": {
+          "$cond": [{ "$gt": [{ "$ifNull": ["$application.cibilScore", 0] }, 0] }, 1, 0]
+        }
+      }
+    }
+  },
+  { "$sort": { "_id": 1 } },
+  {
+    "$project": {
+      "date": "$_id",
+      "newLoans": 1,
+      "disbursedAmount": {
+        "$subtract": ["$disbursedAmount", { "$mod": ["$disbursedAmount", 1] }]
+      },
+      "avgLoanSize": {
+        "$subtract": [
+          { "$divide": ["$avgLoanSum", { "$max": ["$newLoans", 1] }] },
+          { "$mod": [{ "$divide": ["$avgLoanSum", { "$max": ["$newLoans", 1] }] }, 1] }
+        ]
+      },
+      "avgCibil": {
+        "$subtract": [
+          { "$divide": ["$cibilSum", { "$max": ["$cibilCount", 1] }] },
+          { "$mod": [{ "$divide": ["$cibilSum", { "$max": ["$cibilCount", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  }
+]

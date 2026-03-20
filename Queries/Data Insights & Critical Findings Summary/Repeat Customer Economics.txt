@@ -1,0 +1,41 @@
+Repeat Customer Economics:Loans
+[
+  {
+    "$group": {
+      "_id": "$customerId",
+      "loanCount": { "$sum": 1 },
+      "totalDisbursed": { "$sum": "$disbursementAmount" }
+    }
+  },
+  { "$match": { "loanCount": { "$gte": 2 } } },
+  {
+    "$group": {
+      "_id": null,
+      "repeatCustomers": { "$sum": 1 },
+      "totalLoans": { "$sum": "$loanCount" },
+      "maxLoans": { "$max": "$loanCount" },
+      "totalDisbursedSum": { "$sum": "$totalDisbursed" }
+    }
+  },
+  {
+    "$project": {
+      "repeatCustomers": 1,
+      "avgLoansPerCustomer": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$totalLoans", { "$max": ["$repeatCustomers", 1] }] }, 100] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "maxLoansPerCustomer": "$maxLoans",
+      "avgTotalDisbursedPerRepeat": {
+        "$subtract": [
+          { "$divide": ["$totalDisbursedSum", { "$max": ["$repeatCustomers", 1] }] },
+          { "$mod": [{ "$divide": ["$totalDisbursedSum", { "$max": ["$repeatCustomers", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  }
+]

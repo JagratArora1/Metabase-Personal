@@ -108,7 +108,7 @@ DPD Bucket Weekly Trend:loans
     },
     "count": {"$sum": 1}
   }},
-  {"$sort": {"_id.month": 1}},
+  {"$sort": {"_id.month": 1, "_id.bucket": 1,}},
   {"$project": {"month": "$_id.month", "dpdBucket": "$_id.bucket", "count": 1, "_id": 0}}
 ]
 

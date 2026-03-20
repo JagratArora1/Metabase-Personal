@@ -1,0 +1,205 @@
+Best Time to Reach Customers (by Channel):collection activities
+[
+  { "$match": { "outcome": { "$exists": true } } },
+  {
+    "$addFields": {
+      "hourIST": {
+        "$mod": [{ "$add": [{ "$hour": "$createdAt" }, 5] }, 24]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "hour": "$hourIST", "type": "$activityType" },
+      "total": { "$sum": 1 },
+      "answered": { "$sum": { "$cond": [{ "$eq": ["$outcome", "ANSWERED"] }, 1, 0] } },
+      "ptpMade": { "$sum": { "$cond": [{ "$eq": ["$ptpGiven", true] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "hourIST": "$_id.hour",
+      "channel": "$_id.type",
+      "totalAttempts": "$total",
+      "answerRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$answered", { "$max": ["$total", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "ptpRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$ptpMade", { "$max": ["$answered", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "channel": 1, "hourIST": 1 } }
+]
+
+
+
+
+Day-of-Week Response Rates:collection activities
+[
+  { "$match": { "outcome": { "$exists": true } } },
+  {
+    "$addFields": {
+      "dayOfWeek": { "$dayOfWeek": "$createdAt" }
+    }
+  },
+  {
+    "$addFields": {
+      "dayName": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$dayOfWeek", 1] }, "then": "Sunday" },
+            { "case": { "$eq": ["$dayOfWeek", 2] }, "then": "Monday" },
+            { "case": { "$eq": ["$dayOfWeek", 3] }, "then": "Tuesday" },
+            { "case": { "$eq": ["$dayOfWeek", 4] }, "then": "Wednesday" },
+            { "case": { "$eq": ["$dayOfWeek", 5] }, "then": "Thursday" },
+            { "case": { "$eq": ["$dayOfWeek", 6] }, "then": "Friday" },
+            { "case": { "$eq": ["$dayOfWeek", 7] }, "then": "Saturday" }
+          ],
+          "default": "Unknown"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "day": "$dayName", "dayNum": "$dayOfWeek" },
+      "totalAttempts": { "$sum": 1 },
+      "answered": { "$sum": { "$cond": [{ "$eq": ["$outcome", "ANSWERED"] }, 1, 0] } },
+      "ptpMade": { "$sum": { "$cond": [{ "$eq": ["$ptpGiven", true] }, 1, 0] } },
+      "amountCollected": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$isSuccessful", true] },
+            { "$toDouble": { "$ifNull": ["$amount", "0"] } },
+            0
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "day": "$_id.day",
+      "sortOrder": "$_id.dayNum",
+      "totalAttempts": 1,
+      "answerRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$answered", { "$max": ["$totalAttempts", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "ptpConversion": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$ptpMade", { "$max": ["$answered", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "amountCollected": {
+        "$subtract": ["$amountCollected", { "$mod": ["$amountCollected", 1] }]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "sortOrder": 1 } }
+]
+
+
+
+
+Optimal Communication Cadence:collection activities
+[
+  {
+    "$group": {
+      "_id": { "loanId": "$loanId", "customerId": "$customerId" },
+      "totalTouches": { "$sum": 1 },
+      "callTouches": { "$sum": { "$cond": [{ "$eq": ["$activityType", "CALL"] }, 1, 0] } },
+      "smsTouches": { "$sum": { "$cond": [{ "$eq": ["$activityType", "SMS"] }, 1, 0] } },
+      "whatsappTouches": { "$sum": { "$cond": [{ "$eq": ["$activityType", "WHATSAPP"] }, 1, 0] } },
+      "emailTouches": { "$sum": { "$cond": [{ "$eq": ["$activityType", "EMAIL"] }, 1, 0] } },
+      "anyPTP": { "$max": { "$cond": [{ "$eq": ["$ptpGiven", true] }, 1, 0] } },
+      "amountCollected": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$isSuccessful", true] },
+            { "$toDouble": { "$ifNull": ["$amount", "0"] } },
+            0
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$addFields": {
+      "touchBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lte": ["$totalTouches", 1] }, "then": "1 touch" },
+            { "case": { "$lte": ["$totalTouches", 3] }, "then": "2-3 touches" },
+            { "case": { "$lte": ["$totalTouches", 5] }, "then": "4-5 touches" },
+            { "case": { "$lte": ["$totalTouches", 10] }, "then": "6-10 touches" },
+            { "case": { "$lte": ["$totalTouches", 20] }, "then": "11-20 touches" }
+          ],
+          "default": "20+ touches"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$touchBucket",
+      "loans": { "$sum": 1 },
+      "withPTP": { "$sum": "$anyPTP" },
+      "totalCollected": { "$sum": "$amountCollected" },
+      "avgTouchesSum": { "$sum": "$totalTouches" }
+    }
+  },
+  {
+    "$project": {
+      "touchRange": "$_id",
+      "loanCount": "$loans",
+      "ptpRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$withPTP", { "$max": ["$loans", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "totalCollected": {
+        "$subtract": ["$totalCollected", { "$mod": ["$totalCollected", 1] }]
+      },
+      "avgCollectedPerLoan": {
+        "$subtract": [
+          { "$divide": ["$totalCollected", { "$max": ["$loans", 1] }] },
+          { "$mod": [{ "$divide": ["$totalCollected", { "$max": ["$loans", 1] }] }, 1] }
+        ]
+      },
+      "avgTouches": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$avgTouchesSum", { "$max": ["$loans", 1] }] }, 10] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "avgTouches": 1 } }
+]

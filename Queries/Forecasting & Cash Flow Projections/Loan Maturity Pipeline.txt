@@ -1,0 +1,159 @@
+Daily Maturity Calendar (Next 30 Days):loans
+[
+  {
+    "$match": {
+      "status": { "$in": ["ACTIVE", "OVERDUE"] },
+      "maturityDate": { "$exists": true, "$ne": null }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "$dateToString": { "format": "%Y-%m-%d", "date": "$maturityDate" } },
+      "loanCount": { "$sum": 1 },
+      "totalDue": { "$sum": "$totalOutstanding" },
+      "totalPrincipal": { "$sum": "$disbursementAmount" }
+    }
+  },
+  {
+    "$project": {
+      "dueDate": "$_id",
+      "loanCount": 1,
+      "totalDue": {
+        "$subtract": ["$totalDue", { "$mod": ["$totalDue", 1] }]
+      },
+      "totalPrincipal": {
+        "$subtract": ["$totalPrincipal", { "$mod": ["$totalPrincipal", 1] }]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "dueDate": 1 } }
+]
+
+
+
+Loans Maturing in Next 7/15/30 Days:loans[
+  { "$match": { "status": { "$in": ["ACTIVE", "OVERDUE"] } } },
+  {
+    "$addFields": {
+      "daysToMaturity": {
+        "$divide": [
+          { "$subtract": ["$maturityDate", { "$toDate": "2026-03-18T00:00:00.000Z" }] },
+          86400000
+        ]
+      }
+    }
+  },
+  {
+    "$addFields": {
+      "maturityBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lte": ["$daysToMaturity", 0] }, "then": "Already Past Due" },
+            { "case": { "$lte": ["$daysToMaturity", 3] }, "then": "Next 3 Days" },
+            { "case": { "$lte": ["$daysToMaturity", 7] }, "then": "4-7 Days" },
+            { "case": { "$lte": ["$daysToMaturity", 15] }, "then": "8-15 Days" },
+            { "case": { "$lte": ["$daysToMaturity", 30] }, "then": "16-30 Days" },
+            { "case": { "$lte": ["$daysToMaturity", 60] }, "then": "31-60 Days" }
+          ],
+          "default": "60+ Days"
+        }
+      }
+    }
+  },
+  {
+    "$lookup": {
+      "from": "customers",
+      "localField": "customerId",
+      "foreignField": "_id",
+      "as": "customer"
+    }
+  },
+  { "$unwind": { "path": "$customer", "preserveNullAndEmptyArrays": true } },
+  {
+    "$project": {
+      "loanNumber": 1,
+      "status": 1,
+      "maturityBucket": 1,
+      "daysToMaturity": {
+        "$let": {
+          "vars": { "raw": { "$multiply": ["$daysToMaturity", 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "maturityDate": 1,
+      "nextDueDate": 1,
+      "totalOutstanding": 1,
+      "disbursementAmount": 1,
+      "principalAmount": 1,
+      "tenure": 1
+      "dpd": { "$ifNull": ["$dpd", 0] },
+      "dpdBucket": 1,
+      "customerName": {
+        "$concat": [
+          { "$ifNull": ["$customer.firstName", ""] },
+          " ",
+          { "$ifNull": ["$customer.lastName", ""] }
+        ]
+      }
+      "_id": 0
+    }
+  },
+  { "$sort": { "daysToMaturity": 1 } }
+]
+
+
+
+
+Past Due Aging (Already Overdue Breakdown):loans
+[
+  { "$match": { "status": { "$in": ["OVERDUE", "NPA"] }, "dpd": { "$gt": 0 } } },
+  {
+    "$addFields": {
+      "agingBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lte": ["$dpd", 7] }, "then": "1-7 DPD" },
+            { "case": { "$lte": ["$dpd", 15] }, "then": "8-15 DPD" },
+            { "case": { "$lte": ["$dpd", 30] }, "then": "16-30 DPD" },
+            { "case": { "$lte": ["$dpd", 60] }, "then": "31-60 DPD" },
+            { "case": { "$lte": ["$dpd", 90] }, "then": "61-90 DPD" }
+          ],
+          "default": "90+ DPD (NPA)"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$agingBucket",
+      "loanCount": { "$sum": 1 },
+      "totalOutstanding": { "$sum": "$totalOutstanding" },
+      "totalPrincipal": { "$sum": "$disbursementAmount" },
+      "avgDPDSum": { "$sum": "$dpd" },
+      "avgDPDCount": { "$sum": 1 }
+    }
+  },
+  {
+    "$project": {
+      "agingBucket": "$_id",
+      "loanCount": 1,
+      "totalOutstanding": {
+        "$subtract": ["$totalOutstanding", { "$mod": ["$totalOutstanding", 1] }]
+      },
+      "principalAtRisk": {
+        "$subtract": ["$totalPrincipal", { "$mod": ["$totalPrincipal", 1] }]
+      },
+      "avgDPD": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$avgDPDSum", { "$max": ["$avgDPDCount", 1] }] }, 10] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "avgDPD": 1 } }
+]

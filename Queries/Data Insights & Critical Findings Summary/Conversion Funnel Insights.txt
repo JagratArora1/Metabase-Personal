@@ -1,0 +1,177 @@
+Application-to-Disbursement by CIBIL:Applications
+[
+  {
+    "$addFields": {
+      "cibilBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$or": [{ "$eq": ["$cibilScore", null] }, { "$eq": ["$cibilScore", 0] }] }, "then": "0-500" },
+            { "case": { "$lt": ["$cibilScore", 500] }, "then": "0-500" },
+            { "case": { "$lt": ["$cibilScore", 600] }, "then": "500-600" },
+            { "case": { "$lt": ["$cibilScore", 650] }, "then": "600-650" },
+            { "case": { "$lt": ["$cibilScore", 700] }, "then": "650-700" },
+            { "case": { "$lt": ["$cibilScore", 750] }, "then": "700-750" },
+            { "case": { "$lt": ["$cibilScore", 800] }, "then": "750-800" }
+          ],
+          "default": "800+"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$cibilBucket",
+      "applications": { "$sum": 1 },
+      "disbursed": {
+        "$sum": { "$cond": [{ "$eq": ["$status", "DISBURSED"] }, 1, 0] }
+      }
+    }
+  },
+  {
+    "$project": {
+      "cibilRange": "$_id",
+      "applications": 1,
+      "disbursed": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$disbursed", { "$max": ["$applications", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "cibilRange": 1 } }
+]
+
+
+
+
+Payment Link Effectiveness:Paymentlinks
+[
+  {
+    "$group": {
+      "_id": null,
+      "totalLinks": { "$sum": 1 },
+      "paid": {
+        "$sum": { "$cond": [{ "$eq": ["$status", "PAID"] }, 1, 0] }
+      },
+      "avgDaysSum": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$status", "PAID"] },
+            { "$divide": [{ "$subtract": [{ "$ifNull": ["$paidAt", "$updatedAt"] }, "$createdAt"] }, 86400000] },
+            0
+          ]
+        }
+      },
+      "minDays": {
+        "$min": {
+          "$cond": [
+            { "$eq": ["$status", "PAID"] },
+            { "$divide": [{ "$subtract": [{ "$ifNull": ["$paidAt", "$updatedAt"] }, "$createdAt"] }, 86400000] },
+            null
+          ]
+        }
+      },
+      "maxDays": {
+        "$max": {
+          "$cond": [
+            { "$eq": ["$status", "PAID"] },
+            { "$divide": [{ "$subtract": [{ "$ifNull": ["$paidAt", "$updatedAt"] }, "$createdAt"] }, 86400000] },
+            null
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "totalLinks": 1,
+      "paid": 1,
+      "paymentRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$paid", { "$max": ["$totalLinks", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgDaysToPay": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$avgDaysSum", { "$max": ["$paid", 1] }] }, 100] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "fastestDays": {
+        "$let": {
+          "vars": { "raw": { "$multiply": ["$minDays", 100] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "slowestDays": {
+        "$let": {
+          "vars": { "raw": { "$multiply": ["$maxDays", 100] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  }
+]
+
+
+
+
+User Journey Conversion:user Journey
+[
+  {
+    "$group": {
+      "_id": "$journeyStatus",
+      "count": { "$sum": 1 },
+      "totalTimeSum": { "$sum": { "$ifNull": ["$totalTimeSpent", 0] } }
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "total": { "$sum": "$count" },
+      "statuses": {
+        "$push": {
+          "status": "$_id",
+          "count": "$count",
+          "totalTimeSum": "$totalTimeSum"
+        }
+      }
+    }
+  },
+  { "$unwind": "$statuses" },
+  {
+    "$project": {
+      "journeyStatus": "$statuses.status",
+      "count": "$statuses.count",
+      "avgTimeSpentMin": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$statuses.totalTimeSum", { "$max": ["$statuses.count", 1] }] }, 10] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "overallRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$statuses.count", { "$max": ["$total", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "count": -1 } }
+]

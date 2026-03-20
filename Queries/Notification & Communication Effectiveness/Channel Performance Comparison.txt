@@ -1,0 +1,143 @@
+AI Call vs Human Call Effectiveness:collection activities
+[
+  { "$match": { "activityType": "CALL" } },
+  {
+    "$addFields": {
+      "callSource": {
+        "$cond": [
+          { "$eq": [{ "$ifNull": ["$isAICall", false] }, true] },
+          "AI Call",
+          "Human Call"
+        ]
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$callSource",
+      "totalCalls": { "$sum": 1 },
+      "answered": { "$sum": { "$cond": [{ "$eq": ["$outcome", "ANSWERED"] }, 1, 0] } },
+      "ptpMade": { "$sum": { "$cond": [{ "$eq": ["$ptpGiven", true] }, 1, 0] } },
+      "refused": { "$sum": { "$cond": [{ "$eq": ["$outcome", "REFUSED"] }, 1, 0] } },
+      "amountCollected": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$isSuccessful", true] },
+            { "$toDouble": { "$ifNull": ["$amount", "0"] } },
+            0
+          ]
+        }
+      },
+      "durationSum": { "$sum": { "$ifNull": ["$duration", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "source": "$_id",
+      "totalCalls": 1,
+      "answerRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$answered", { "$max": ["$totalCalls", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "ptpRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$ptpMade", { "$max": ["$answered", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "refusalRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$refused", { "$max": ["$answered", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "amountCollected": {
+        "$subtract": ["$amountCollected", { "$mod": ["$amountCollected", 1] }]
+      },
+      "avgCallDurationSec": {
+        "$subtract": [
+          { "$divide": ["$durationSum", { "$max": ["$totalCalls", 1] }] },
+          { "$mod": [{ "$divide": ["$durationSum", { "$max": ["$totalCalls", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  }
+]
+
+
+
+
+Communication Channel Effectiveness:collection activities
+[
+  {
+    "$group": {
+      "_id": "$activityType",
+      "totalAttempts": { "$sum": 1 },
+      "answered": { "$sum": { "$cond": [{ "$eq": ["$outcome", "ANSWERED"] }, 1, 0] } },
+      "ptpMade": { "$sum": { "$cond": [{ "$eq": ["$ptpGiven", true] }, 1, 0] } },
+      "amountCollected": {
+        "$sum": {
+          "$cond": [
+            { "$eq": ["$isSuccessful", true] },
+            { "$toDouble": { "$ifNull": ["$amount", "0"] } },
+            0
+          ]
+        }
+      },
+      "refused": { "$sum": { "$cond": [{ "$eq": ["$outcome", "REFUSED"] }, 1, 0] } },
+      "notReached": {
+        "$sum": {
+          "$cond": [
+            { "$in": ["$outcome", ["NOT_ANSWERED", "BUSY", "SWITCHED_OFF", "NOT_REACHABLE"]] },
+            1, 0
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "channel": "$_id",
+      "totalAttempts": 1,
+      "reachRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$answered", { "$max": ["$totalAttempts", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "ptpRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$ptpMade", { "$max": ["$answered", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "amountCollected": {
+        "$subtract": ["$amountCollected", { "$mod": ["$amountCollected", 1] }]
+      },
+      "refusalRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$refused", { "$max": ["$answered", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "notReached": 1,
+      "_id": 0
+    }
+  },
+  { "$sort": { "amountCollected": -1 } }
+]

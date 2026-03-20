@@ -1,0 +1,242 @@
+Branch Target Achievement:branches
+[
+  {
+    "$match": {
+      "isDeleted": { "$ne": true },
+      "targets.monthly": { "$exists": true }
+    }
+  },
+  {
+    "$lookup": {
+      "from": "loans",
+      "localField": "_id",
+      "foreignField": "branchId",
+      "as": "loans"
+    }
+  },
+  {
+    "$addFields": {
+      "totalDisbursed": { "$sum": "$loans.disbursementAmount" },
+      "totalCollected": {
+        "$sum": {
+          "$map": {
+            "input": {
+              "$filter": {
+                "input": "$loans",
+                "as": "l",
+                "cond": { "$eq": ["$$l.status", "CLOSED"] }
+              }
+            },
+            "as": "cl",
+            "in": "$$cl.totalRepayment"
+          }
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "branch": "$branchName",
+      "branchCode": 1,
+      "region": 1,
+      "zone": 1,
+      "disbursement_target": { "$ifNull": ["$targets.monthly.disbursementAmount", 0] },
+      "disbursement_actual": { "$subtract": ["$totalDisbursed", { "$mod": ["$totalDisbursed", 1] }] },
+      "collection_target": { "$ifNull": ["$targets.monthly.collectionAmount", 0] },
+      "collection_actual": { "$subtract": ["$totalCollected", { "$mod": ["$totalCollected", 1] }] },
+      "customer_target": { "$ifNull": ["$targets.monthly.newCustomers", 0] },
+      "disbursement_count_target": { "$ifNull": ["$targets.monthly.disbursementCount", 0] },
+      "efficiency_target": { "$ifNull": ["$targets.monthly.collectionEfficiency", 0] },
+      "_id": 0
+    }
+  },
+  { "$sort": { "branch": 1 } }
+]
+
+
+
+
+Branch-wise Delinquency Comparison:branches
+[
+  { "$match": { "isDeleted": { "$ne": true }, "isActive": true } },
+  {
+    "$lookup": {
+      "from": "loans",
+      "localField": "_id",
+      "foreignField": "branchId",
+      "as": "loans"
+    }
+  },
+  {
+    "$addFields": {
+      "activeLoans": {
+        "$size": {
+          "$filter": {
+            "input": "$loans",
+            "as": "l",
+            "cond": { "$in": ["$$l.status", ["ACTIVE", "OVERDUE", "NPA"]] }
+          }
+        }
+      },
+      "overdueLoans": {
+        "$size": {
+          "$filter": {
+            "input": "$loans",
+            "as": "l",
+            "cond": { "$eq": ["$$l.status", "OVERDUE"] }
+          }
+        }
+      },
+      "npaLoans": {
+        "$size": {
+          "$filter": {
+            "input": "$loans",
+            "as": "l",
+            "cond": { "$eq": ["$$l.status", "NPA"] }
+          }
+        }
+      }
+    }
+  },
+  { "$match": { "activeLoans": { "$gt": 0 } } },
+  {
+    "$project": {
+      "branch": "$branchName",
+      "branchCode": 1,
+      "region": 1,
+      "zone": 1,
+      "activeLoans": 1,
+      "overdueLoans": 1,
+      "npaLoans": 1,
+      "overdueRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$overdueLoans", { "$max": ["$activeLoans", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "npaRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$npaLoans", { "$max": ["$activeLoans", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "overdueRate": -1 } }
+]
+
+
+
+
+
+Branch-wise Portfolio Summary:branches
+[
+  { "$match": { "isDeleted": { "$ne": true }, "isActive": true } },
+  {
+    "$lookup": {
+      "from": "loans",
+      "localField": "_id",
+      "foreignField": "branchId",
+      "as": "loans"
+    }
+  },
+  {
+    "$addFields": {
+      "totalLoans": { "$size": "$loans" },
+      "activeLoans": {
+        "$size": {
+          "$filter": {
+            "input": "$loans",
+            "as": "l",
+            "cond": { "$eq": ["$$l.status", "ACTIVE"] }
+          }
+        }
+      },
+      "overdueLoans": {
+        "$size": {
+          "$filter": {
+            "input": "$loans",
+            "as": "l",
+            "cond": { "$eq": ["$$l.status", "OVERDUE"] }
+          }
+        }
+      },
+      "npaLoans": {
+        "$size": {
+          "$filter": {
+            "input": "$loans",
+            "as": "l",
+            "cond": { "$eq": ["$$l.status", "NPA"] }
+          }
+        }
+      },
+      "totalDisbursed": {
+        "$sum": "$loans.disbursementAmount"
+      },
+      "totalOutstanding": {
+        "$sum": "$loans.totalOutstanding"
+      }
+    }
+  },
+  {
+    "$project": {
+      "branchName": 1,
+      "branchCode": 1,
+      "branchId": 1,
+      "region": 1,
+      "zone": 1,
+      "branchType": 1,
+      "status": 1,
+      "staffing": 1,
+      "totalLoans": 1,
+      "activeLoans": 1,
+      "overdueLoans": 1,
+      "npaLoans": 1,
+      "totalDisbursed": {
+        "$subtract": ["$totalDisbursed", { "$mod": ["$totalDisbursed", 1] }]
+      },
+      "totalOutstanding": {
+        "$subtract": ["$totalOutstanding", { "$mod": ["$totalOutstanding", 1] }]
+      },
+      "disbursementTarget": { "$ifNull": ["$targets.monthly.disbursementAmount", 0] },
+      "collectionTarget": { "$ifNull": ["$targets.monthly.collectionAmount", 0] },
+      "customerTarget": { "$ifNull": ["$targets.monthly.newCustomers", 0] },
+      "efficiencyTarget": { "$ifNull": ["$targets.monthly.collectionEfficiency", 0] },
+      "_id": 0
+    }
+  },
+  {
+    "$addFields": {
+      "disbursementAchievement": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$totalDisbursed", { "$max": ["$disbursementTarget", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "overdueRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$overdueLoans", { "$max": ["$activeLoans", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "npaRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$npaLoans", { "$max": ["$totalLoans", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      }
+    }
+  },
+  { "$sort": { "totalDisbursed": -1 } }
+]

@@ -1,0 +1,192 @@
+Entry Source Distribution:user journeys
+[
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$entrySource", "DIRECT"] },
+      "visitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "source": "$_id",
+      "visitors": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "visitors": -1 } }
+]
+
+
+
+
+Landing Page Performance (v1 vs v2):user journeys
+[
+  {
+    "$group": {
+      "_id": "$landingPage",
+      "totalVisitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } },
+      "abandoned": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "ABANDONED"] }, 1, 0] } },
+      "avgTimeSum": { "$sum": { "$ifNull": ["$totalTimeSpent", 0] } },
+      "avgStepsSum": { "$sum": { "$ifNull": ["$highestStepReached", 0] } },
+      "uniqueVisitors": { "$addToSet": "$visitorId" }
+    }
+  },
+  {
+    "$project": {
+      "landingPage": "$_id",
+      "totalVisitors": 1,
+      "uniqueVisitors": { "$size": "$uniqueVisitors" },
+      "converted": 1,
+      "abandoned": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$totalVisitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "avgTimeSpentSec": {
+        "$subtract": [
+          { "$divide": ["$avgTimeSum", { "$max": ["$totalVisitors", 1] }] },
+          { "$mod": [{ "$divide": ["$avgTimeSum", { "$max": ["$totalVisitors", 1] }] }, 1] }
+        ]
+      },
+      "avgStepsCompleted": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$avgStepsSum", { "$max": ["$totalVisitors", 1] }] }, 10] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "totalVisitors": -1 } }
+]
+
+
+
+
+UTM Campaign Performance:user journeys
+[
+  { "$match": { "utm.campaign": { "$exists": true, "$ne": null } } },
+  {
+    "$group": {
+      "_id": { "source": "$utm.source", "campaign": "$utm.campaign" },
+      "visitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } },
+      "avgTimeSum": { "$sum": { "$ifNull": ["$totalTimeSpent", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "utmSource": "$_id.source",
+      "utmCampaign": "$_id.campaign",
+      "visitors": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "avgTimeSpentSec": {
+        "$subtract": [
+          { "$divide": ["$avgTimeSum", { "$max": ["$visitors", 1] }] },
+          { "$mod": [{ "$divide": ["$avgTimeSum", { "$max": ["$visitors", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  },
+  { "$match": { "visitors": { "$gte": 10 } } },
+  { "$sort": { "conversionRate": -1 } }
+]
+
+
+
+
+UTM Medium Breakdown:user journeys
+[
+  { "$match": { "utm.medium": { "$exists": true, "$ne": null } } },
+  {
+    "$group": {
+      "_id": "$utm.medium",
+      "visitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "utmMedium": "$_id",
+      "visitors": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "visitors": -1 } }
+]
+
+
+
+
+UTM Source Performance:user journeys
+[
+  { "$match": { "utm.source": { "$exists": true, "$ne": null } } },
+  {
+    "$group": {
+      "_id": "$utm.source",
+      "visitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } },
+      "avgTimeSum": { "$sum": { "$ifNull": ["$totalTimeSpent", 0] } },
+      "uniqueVisitors": { "$addToSet": "$visitorId" }
+    }
+  },
+  {
+    "$project": {
+      "utmSource": "$_id",
+      "totalVisitors": "$visitors",
+      "uniqueVisitors": { "$size": "$uniqueVisitors" },
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "avgTimeSpentSec": {
+        "$subtract": [
+          { "$divide": ["$avgTimeSum", { "$max": ["$visitors", 1] }] },
+          { "$mod": [{ "$divide": ["$avgTimeSum", { "$max": ["$visitors", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "totalVisitors": -1 } }
+]
