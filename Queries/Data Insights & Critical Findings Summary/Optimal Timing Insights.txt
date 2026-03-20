@@ -1,0 +1,118 @@
+Best Times for Collection Calls:ai call logs
+[
+  {"$match": {
+    "isDeleted": {"$ne": true},
+    "startedAt": {"$exists": true, "$ne": ""}
+  }},
+  {"$addFields": {
+    "startedAtDate": {"$dateFromString": {"dateString": "$startedAt"}}
+  }},
+  {"$addFields": {
+    "startedAtIST": {"$add": ["$startedAtDate", 19800000]},
+    "isAnswered": {"$cond": [{"$eq": ["$status", "no-answer"]}, 0, 1]}
+  }},
+  {"$addFields": {
+    "hourIST": {"$hour": "$startedAtIST"},
+    "minuteIST": {"$minute": "$startedAtIST"}
+  }},
+  {"$addFields": {
+    "halfHourSlot": {
+      "$concat": [
+        {"$cond": [{"$lt": ["$hourIST", 10]}, {"$concat": ["0", {"$toString": "$hourIST"}]}, {"$toString": "$hourIST"}]},
+        ":",
+        {"$cond": [{"$lt": ["$minuteIST", 30]}, "00", "30"]}
+      ]
+    }
+  }},
+  {"$group": {
+    "_id": "$halfHourSlot",
+    "totalCalls": {"$sum": 1},
+    "answeredCalls": {"$sum": "$isAnswered"}
+  }},
+  {"$addFields": {
+    "answerRate": {
+      "$divide": [
+        {"$subtract": [
+          {"$multiply": [{"$divide": ["$answeredCalls", {"$max": ["$totalCalls", 1]}]}, 1000]},
+          {"$mod": [{"$multiply": [{"$divide": ["$answeredCalls", {"$max": ["$totalCalls", 1]}]}, 1000]}, 1]}
+        ]},
+        10
+      ]
+    }
+  }},
+  {"$project": {
+    "_id": 0,
+    "timeSlot": "$_id",
+    "totalCalls": 1,
+    "answeredCalls": 1,
+    "answerRate": 1
+  }},
+  {"$sort": {"answerRate": -1}}
+]
+
+
+
+Peak Application Times:applications
+[
+  {"$match": {"isDeleted": {"$ne": true}, "appliedDate": {"$exists": true}}},
+  {"$group": {
+    "_id": {"$dayOfWeek": "$appliedDate"},
+    "applications": {"$sum": 1}
+  }},
+  {"$addFields": {
+    "dayName": {"$switch": {
+      "branches": [
+        {"case": {"$eq": ["$_id", 1]}, "then": "Sunday"},
+        {"case": {"$eq": ["$_id", 2]}, "then": "Monday"},
+        {"case": {"$eq": ["$_id", 3]}, "then": "Tuesday"},
+        {"case": {"$eq": ["$_id", 4]}, "then": "Wednesday"},
+        {"case": {"$eq": ["$_id", 5]}, "then": "Thursday"},
+        {"case": {"$eq": ["$_id", 6]}, "then": "Friday"},
+        {"case": {"$eq": ["$_id", 7]}, "then": "Saturday"}
+      ],
+      "default": "Unknown"
+    }}
+  }},
+  {"$project": {"_id": 0, "day": "$dayName", "dayOrder": "$_id", "applications": 1}},
+  {"$sort": {"dayOrder": 1}}
+]
+
+
+
+
+Peak Payment Times (IST):payments
+[
+  {"$match": {
+    "isDeleted": {"$ne": true},
+    "createdAt": {"$exists": true},
+    "status": "SUCCESS"
+  }},
+  {"$addFields": {
+    "createdAtIST": {"$add": ["$createdAt", 19800000]}
+  }},
+  {"$addFields": {
+    "hourIST": {"$hour": "$createdAtIST"},
+    "minuteIST": {"$minute": "$createdAtIST"}
+  }},
+  {"$addFields": {
+    "halfHourSlot": {
+      "$concat": [
+        {"$cond": [{"$lt": ["$hourIST", 10]}, {"$concat": ["0", {"$toString": "$hourIST"}]}, {"$toString": "$hourIST"}]},
+        ":",
+        {"$cond": [{"$lt": ["$minuteIST", 30]}, "00", "30"]}
+      ]
+    }
+  }},
+  {"$group": {
+    "_id": "$halfHourSlot",
+    "paymentCount": {"$sum": 1},
+    "totalAmount": {"$sum": {"$toDouble": "$amount"}}
+  }},
+  {"$project": {
+    "_id": 0,
+    "timeSlot": "$_id",
+    "paymentCount": 1,
+    "totalAmount": 1
+  }},
+  {"$sort": {"timeSlot": 1}}
+]

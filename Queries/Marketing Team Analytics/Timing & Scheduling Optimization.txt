@@ -1,0 +1,110 @@
+Best Day of Week for Applications:user journeys
+[
+  {
+    "$addFields": {
+      "dayOfWeek": { "$dayOfWeek": "$createdAt" },
+      "dayName": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": [{ "$dayOfWeek": "$createdAt" }, 1] }, "then": "Sunday" },
+            { "case": { "$eq": [{ "$dayOfWeek": "$createdAt" }, 2] }, "then": "Monday" },
+            { "case": { "$eq": [{ "$dayOfWeek": "$createdAt" }, 3] }, "then": "Tuesday" },
+            { "case": { "$eq": [{ "$dayOfWeek": "$createdAt" }, 4] }, "then": "Wednesday" },
+            { "case": { "$eq": [{ "$dayOfWeek": "$createdAt" }, 5] }, "then": "Thursday" },
+            { "case": { "$eq": [{ "$dayOfWeek": "$createdAt" }, 6] }, "then": "Friday" },
+            { "case": { "$eq": [{ "$dayOfWeek": "$createdAt" }, 7] }, "then": "Saturday" }
+          ],
+          "default": "Unknown"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "day": "$dayName", "num": "$dayOfWeek" },
+      "visitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "day": "$_id.day",
+      "sortOrder": "$_id.num",
+      "visitors": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "sortOrder": 1 } }
+]
+
+
+
+
+
+Best Hour of Day for Applications:user journeys
+[
+  {
+    "$addFields": {
+      "hourIST": { "$mod": [{ "$add": [{ "$hour": "$createdAt" }, 5] }, 24] }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$hourIST",
+      "visitors": { "$sum": 1 },
+      "converted": { "$sum": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } }
+    }
+  },
+  {
+    "$project": {
+      "hourIST": "$_id",
+      "visitors": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "hourIST": 1 } }
+]
+
+
+
+Device Type Distribution:user journeys
+[
+  {"$group": {
+    "_id": {"$ifNull": ["$deviceInfo.deviceType", "Unknown"]},
+    "visitors": {"$sum": 1},
+    "converted": {"$sum": {"$cond": [{"$eq": ["$status", "CONVERTED"]}, 1, 0]}}
+  }},
+  {"$project": {
+    "deviceType": "$_id",
+    "visitors": 1,
+    "converted": 1,
+    "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$visitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+    "_id": 0
+  }},
+  {"$sort": {"visitors": -1}}
+]

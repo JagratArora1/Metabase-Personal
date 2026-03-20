@@ -1,0 +1,151 @@
+Abandoned Users Who Spent 10+ Minutes:user journeys
+[
+  {
+    "$match": {
+      "journeyStatus": "ABANDONED",
+      "totalTimeSpent": { "$gte": 600 }
+    }
+  },
+  {
+    "$lookup": {
+      "from": "customers",
+      "localField": "visitorId",
+      "foreignField": "visitorId",
+      "as": "customer"
+    }
+  },
+  { "$unwind": { "path": "$customer", "preserveNullAndEmptyArrays": true } },
+  {
+    "$project": {
+      "visitorId": 1,
+      "phone": "$customer.mobile",
+      "email": "$customer.email",
+      "totalTimeSpentSec": "$totalTimeSpent",
+      "timeSpentMin": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$totalTimeSpent", 60] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "highestStepReached": 1,
+      "currentStep": 1,
+      "landingPage": 1,
+      "utmSource": "$utm.source",
+      "utmCampaign": "$utm.campaign",
+      "isMobile": { "$arrayElemAt": ["$sessions.deviceInfo.isMobile", 0] },
+      "browser": { "$arrayElemAt": ["$sessions.deviceInfo.browser", 0] },
+      "visitDate": "$createdAt",
+      "_id": 0
+    }
+  },
+  { "$sort": { "totalTimeSpentSec": -1 } },
+  { "$limit": 500 }
+]
+
+
+
+
+Drop-off Step Analysis:user journeys
+[
+  { "$match": { "journeyStatus": "ABANDONED" } },
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$currentStep", "$highestStepReached"] },
+      "dropoffs": { "$sum": 1 },
+      "avgTimeSum": { "$sum": { "$ifNull": ["$totalTimeSpent", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "dropOffStep": { "$ifNull": ["$_id", "Unknown"] },
+      "dropoffs": 1,
+      "avgTimeSpentSec": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$avgTimeSum", { "$max": ["$dropoffs", 1] }] }, 10] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "dropoffs": -1 } }
+]
+
+
+
+
+Returning Visitors:user journeys
+[
+  {
+    "$group": {
+      "_id": "$visitorId",
+      "visitCount": { "$sum": 1 },
+      "firstVisit": { "$min": "$createdAt" },
+      "lastVisit": { "$max": "$createdAt" },
+      "anyConverted": { "$max": { "$cond": [{ "$eq": ["$journeyStatus", "CONVERTED"] }, 1, 0] } }
+    }
+  },
+  { "$match": { "visitCount": { "$gt": 1 }, "_id": { "$ne": null } } },
+  {
+    "$addFields": {
+      "daysBetweenVisits": {
+        "$divide": [{ "$subtract": ["$lastVisit", "$firstVisit"] }, 86400000]
+      },
+      "visitBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$visitCount", 2] }, "then": "2 visits" },
+            { "case": { "$eq": ["$visitCount", 3] }, "then": "3 visits" },
+            { "case": { "$lte": ["$visitCount", 5] }, "then": "4-5 visits" }
+          ],
+          "default": "6+ visits"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$visitBucket",
+      "users": { "$sum": 1 },
+      "converted": { "$sum": "$anyConverted" },
+      "totalReturning": { "$sum": 1 },
+      "avgVisitsSum": { "$sum": "$visitCount" },
+      "avgDaysSum": { "$sum": "$daysBetweenVisits" }
+    }
+  },
+  {
+    "$project": {
+      "visitBucket": "$_id",
+      "users": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$users", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgVisitsPerUser": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$avgVisitsSum", { "$max": ["$users", 1] }] }, 10] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgDaysBetweenVisits": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$avgDaysSum", { "$max": ["$users", 1] }] }, 10] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "users": -1 } }
+]

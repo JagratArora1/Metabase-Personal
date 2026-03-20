@@ -1,0 +1,84 @@
+Vintage/Cohort Performance:loans
+[
+  {
+    "$match": {
+      "disbursementDate": { "$exists": true },
+      "isDeleted": { "$ne": true }
+    }
+  },
+  {
+    "$group": {
+      "_id": {
+        "week": {
+          "$dateToString": {
+            "format": "%Y-%m-%d",
+            "date": {
+              "$subtract": [
+                "$disbursementDate",
+                {
+                  "$multiply": [
+                    {
+                      "$subtract": [
+                        { "$dayOfWeek": "$disbursementDate" },
+                        2
+                      ]
+                    },
+                    86400000
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "status": "$status"
+      },
+      "count": { "$sum": 1 },
+      "avgDPD": { "$avg": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$_id.week",
+      "closedCount": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$_id.status", "CLOSED"] }, "$count", 0]
+        }
+      },
+      "overdueCount": {
+        "$sum": {
+          "$cond": [{ "$eq": ["$_id.status", "OVERDUE"] }, "$count", 0]
+        }
+      },
+      "avgDPD": { "$avg": "$avgDPD" }
+    }
+  },
+  {
+    "$addFields": {
+      "avgDPD": {
+        "$divide": [
+          {
+            "$toLong": {
+              "$add": [
+                { "$multiply": ["$avgDPD", 10] },
+                0.5
+              ]
+            }
+          },
+          10
+        ]
+      }
+    }
+  },
+  {
+    "$sort": { "_id": 1 }
+  },
+  {
+    "$project": {
+      "weekStarting": "$_id",
+      "closedCount": 1,
+      "overdueCount": 1,
+      "avgDPD": 1,
+      "_id": 0
+    }
+  }
+]

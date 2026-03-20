@@ -1,0 +1,153 @@
+Cost Per Acquisition Estimate by Channel:user journeys
+[
+  {
+    "$group": {
+      "_id": { "$ifNull": ["$entrySource", "DIRECT"] },
+      "totalVisitors": { "$sum": 1 },
+      "converted": {
+        "$sum": { "$cond": [{ "$eq": ["$isConverted", true] }, 1, 0] }
+      },
+      "uniqueVisitors": { "$addToSet": "$visitorId" }
+    }
+  },
+  {
+    "$lookup": {
+      "from": "loans",
+      "localField": "_id",
+      "foreignField": "entrySource",
+      "as": "loanData"
+    }
+  },
+  {
+    "$project": {
+      "channel": "$_id",
+      "totalVisitors": 1,
+      "uniqueVisitors": { "$size": "$uniqueVisitors" },
+      "formConversions": "$converted",
+      "loansOriginated": { "$size": "$loanData" },
+      "visitToFormRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$totalVisitors", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "formToLoanRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": [{ "$size": "$loanData" }, { "$max": ["$converted", 1] }] }, 10000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "visitorsPerLoan": {
+        "$subtract": [
+          { "$divide": ["$totalVisitors", { "$max": [{ "$size": "$loanData" }, 1] }] },
+          { "$mod": [{ "$divide": ["$totalVisitors", { "$max": [{ "$size": "$loanData" }, 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "loansOriginated": -1 } }
+]
+
+
+
+
+Instant Form / Quick Apply Lead Funnel:Instant Form
+[
+  {
+    "$group": {
+      "_id": null,
+      "totalLeads": { "$sum": 1 },
+      "converted": {
+        "$sum": { "$cond": [{ "$in": ["$status", ["CONVERTED", "DISBURSED", "APPLIED"]] }, 1, 0] }
+      },
+      "statusBreakdown": { "$push": "$status" },
+      "sourceBreakdown": { "$push": { "source": { "$ifNull": ["$source", "UNKNOWN"] }, "status": "$status" } }
+    }
+  },
+  {
+    "$project": {
+      "totalLeads": 1,
+      "converted": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$converted", { "$max": ["$totalLeads", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  }
+]
+
+
+
+
+Lead Quality by CIBIL Score:applications
+[
+  {
+    "$addFields": {
+      "cibilBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$or": [{ "$eq": ["$cibilScore", null] }, { "$eq": ["$cibilScore", 0] }] }, "then": "No CIBIL" },
+            { "case": { "$lt": ["$cibilScore", 500] }, "then": "0-500 (WASTE)" },
+            { "case": { "$lt": ["$cibilScore", 600] }, "then": "500-600 (WASTE)" },
+            { "case": { "$lt": ["$cibilScore", 650] }, "then": "600-650 (Risky)" },
+            { "case": { "$lt": ["$cibilScore", 700] }, "then": "650-700 (BEST Conv)" },
+            { "case": { "$lt": ["$cibilScore", 750] }, "then": "700-750 (Good)" },
+            { "case": { "$lt": ["$cibilScore", 800] }, "then": "750-800 (Good)" }
+          ],
+          "default": "800+ (Low Volume)"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$cibilBucket",
+      "applications": { "$sum": 1 },
+      "disbursed": { "$sum": { "$cond": [{ "$eq": ["$status", "DISBURSED"] }, 1, 0] } },
+      "rejected": { "$sum": { "$cond": [{ "$eq": ["$status", "REJECTED"] }, 1, 0] } },
+      "avgAmountSum": { "$sum": "$requestedLoanAmount" }
+    }
+  },
+  {
+    "$project": {
+      "cibilRange": "$_id",
+      "applications": 1,
+      "disbursed": 1,
+      "rejected": 1,
+      "conversionRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$disbursed", { "$max": ["$applications", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "wasteRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$rejected", { "$max": ["$applications", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgRequestedAmount": {
+        "$subtract": [
+          { "$divide": ["$avgAmountSum", { "$max": ["$applications", 1] }] },
+          { "$mod": [{ "$divide": ["$avgAmountSum", { "$max": ["$applications", 1] }] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "applications": -1 } }
+]

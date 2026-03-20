@@ -1,0 +1,92 @@
+many things:balance monitors
+[
+  { "$match": { "monitoring.enabled": true } },
+  {
+    "$addFields": {
+      "latestSnapshot": { "$arrayElemAt": ["$snapshots", -1] }
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "totalBorrowers": { "$sum": 1 },
+      "salaryDetected": {
+        "$sum": { "$cond": [{ "$eq": ["$latestSnapshot.salaryDetected", true] }, 1, 0] }
+      },
+      "avgBalance": { "$sum": "$latestSnapshot.currentBalance" },
+      "avgOutstanding": { "$sum": "$loanData.totalOutstanding" },
+      "withAlerts": {
+        "$sum": { "$cond": [{ "$gt": [{ "$size": "$alerts" }, 0] }, 1, 0] }
+      },
+      "criticalAlerts": {
+        "$sum": {
+          "$size": {
+            "$filter": {
+              "input": "$alerts",
+              "as": "a",
+              "cond": { "$eq": ["$$a.severity", "CRITICAL"] }
+            }
+          }
+        }
+      },
+      "zeroBalance": {
+        "$sum": { "$cond": [{ "$eq": ["$latestSnapshot.currentBalance", 0] }, 1, 0] }
+      },
+      "belowEMI": {
+        "$sum": {
+          "$cond": [
+            { "$lt": ["$latestSnapshot.currentBalance", "$loanData.emiAmount"] },
+            1, 0
+          ]
+        }
+      }
+    }
+  },
+  {
+    "$project": {
+      "totalBorrowers": 1,
+      "salaryDetected": 1,
+      "salaryDetectedRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$salaryDetected", { "$max": ["$totalBorrowers", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgCurrentBalance": {
+        "$let": {
+          "vars": { "raw": { "$divide": ["$avgBalance", { "$max": ["$totalBorrowers", 1] }] } },
+          "in": { "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }
+        }
+      },
+      "avgOutstanding": {
+        "$let": {
+          "vars": { "raw": { "$divide": ["$avgOutstanding", { "$max": ["$totalBorrowers", 1] }] } },
+          "in": { "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }
+        }
+      },
+      "balanceToOutstandingRatio": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$avgBalance", { "$max": ["$avgOutstanding", 1] }] }, 100] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "withAlerts": 1,
+      "alertRate": {
+        "$let": {
+          "vars": {
+            "raw": { "$multiply": [{ "$divide": ["$withAlerts", { "$max": ["$totalBorrowers", 1] }] }, 1000] }
+          },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "criticalAlerts": 1,
+      "zeroBalance": 1,
+      "belowEMI": 1,
+      "_id": 0
+    }
+  }
+]

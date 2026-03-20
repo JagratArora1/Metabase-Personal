@@ -1,0 +1,186 @@
+Concentration Risk Monitor By Amount Range/state/tenure:loans
+[
+  { "$match": { "status": { "$in": ["ACTIVE", "OVERDUE"] } } },
+  {
+    "$addFields": {
+      "amtBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lte": ["$disbursementAmount", 5000] }, "then": "0-5K" },
+            { "case": { "$lte": ["$disbursementAmount", 10000] }, "then": "5-10K" },
+            { "case": { "$lte": ["$disbursementAmount", 15000] }, "then": "10-15K" },
+            { "case": { "$lte": ["$disbursementAmount", 20000] }, "then": "15-20K" },
+            { "case": { "$lte": ["$disbursementAmount", 25000] }, "then": "20-25K" },
+            { "case": { "$lte": ["$disbursementAmount", 30000] }, "then": "25-30K" }
+          ],
+          "default": "30K+"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$amtBucket",
+      "outstanding": { "$sum": "$totalOutstanding" },
+      "count": { "$sum": 1 }
+    }
+  },
+  {
+    "$project": {
+      "amountRange": "$_id",
+      "outstanding": { "$subtract": ["$outstanding", { "$mod": ["$outstanding", 1] }] },
+      "count": 1,
+      "_id": 0
+    }
+  },
+  { "$sort": { "outstanding": -1 } }
+]
+
+
+
+Expected Loss by Product Segment:loans
+[
+  { "$match": { "status": { "$in": ["ACTIVE", "OVERDUE", "NPA"] } } },
+  {
+    "$addFields": {
+      "tenureBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$tenure", 7] }, "then": "7-day" },
+            { "case": { "$eq": ["$tenure", 15] }, "then": "15-day" },
+            { "case": { "$eq": ["$tenure", 30] }, "then": "30-day" },
+            { "case": { "$gte": ["$tenure", 60] }, "then": "60+ day" }
+          ],
+          "default": "Other"
+        }
+      },
+      "amountBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lte": ["$disbursementAmount", 10000] }, "then": "0-10K" },
+            { "case": { "$lte": ["$disbursementAmount", 20000] }, "then": "10K-20K" },
+            { "case": { "$lte": ["$disbursementAmount", 30000] }, "then": "20K-30K" }
+          ],
+          "default": "30K+"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": { "tenure": "$tenureBucket", "amount": "$amountBucket" },
+      "loanCount": { "$sum": 1 },
+      "totalOutstanding": { "$sum": "$totalOutstanding" },
+      "overdueCount": {
+        "$sum": { "$cond": [{ "$in": ["$status", ["OVERDUE", "NPA"]] }, 1, 0] }
+      },
+      "avgDPDSum": { "$sum": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "tenure": "$_id.tenure",
+      "amountRange": "$_id.amount",
+      "loanCount": 1,
+      "totalOutstanding": {
+        "$subtract": ["$totalOutstanding", { "$mod": ["$totalOutstanding", 1] }]
+      },
+      "overdueRate": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$overdueCount", { "$max": ["$loanCount", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgDPD": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$avgDPDSum", { "$max": ["$loanCount", 1] }] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "estimatedLoss": {
+        "$subtract": [
+          { "$multiply": ["$totalOutstanding", { "$divide": ["$overdueCount", { "$max": ["$loanCount", 1] }] }, 0.5] },
+          { "$mod": [{ "$multiply": ["$totalOutstanding", { "$divide": ["$overdueCount", { "$max": ["$loanCount", 1] }] }, 0.5] }, 1] }
+        ]
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "estimatedLoss": -1 } }
+]
+
+
+
+
+Portfolio at Risk (PAR) Trend:loans
+[
+  { "$match": { "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] } } },
+  {
+    "$addFields": {
+      "activeMonth": {
+        "$dateToString": {
+          "format": "%Y-%m",
+          "date": { "$ifNull": ["$disbursementDate", "$createdAt"] }
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$activeMonth",
+      "totalOutstanding": { "$sum": "$totalOutstanding" },
+      "par1": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 1] }, "$totalOutstanding", 0] } },
+      "par7": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 7] }, "$totalOutstanding", 0] } },
+      "par15": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 15] }, "$totalOutstanding", 0] } },
+      "par30": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 30] }, "$totalOutstanding", 0] } },
+      "par60": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 60] }, "$totalOutstanding", 0] } },
+      "par90": { "$sum": { "$cond": [{ "$gte": [{ "$ifNull": ["$dpd", 0] }, 90] }, "$totalOutstanding", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "month": "$_id",
+      "totalOutstanding": {
+        "$subtract": ["$totalOutstanding", { "$mod": ["$totalOutstanding", 1] }]
+      },
+      "PAR1_pct": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$par1", { "$max": ["$totalOutstanding", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "PAR7_pct": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$par7", { "$max": ["$totalOutstanding", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "PAR15_pct": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$par15", { "$max": ["$totalOutstanding", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "PAR30_pct": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$par30", { "$max": ["$totalOutstanding", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "PAR60_pct": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$par60", { "$max": ["$totalOutstanding", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "PAR90_pct": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$par90", { "$max": ["$totalOutstanding", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "month": 1 } }
+]

@@ -384,65 +384,6 @@ Mandate vs No-Mandate Risk Comparison:Loans
 
 
 
-Portfolio Health Snapshot:Loans
-[
-  {
-    "$match": { "isDeleted": { "$ne": true } }
-  },
-  {
-    "$group": {
-      "_id": null,
-      "totalLoans": { "$sum": 1 },
-      "activeLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "ACTIVE"] }, 1, 0] } },
-      "overdueLoans": { "$sum": { "$cond": [{ "$in": ["$status", ["OVERDUE", "NPA"]] }, 1, 0] } },
-      "npaLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "NPA"] }, 1, 0] } },
-      "closedLoans": { "$sum": { "$cond": [{ "$eq": ["$status", "CLOSED"] }, 1, 0] } },
-      "totalOutstanding": { "$sum": { "$ifNull": ["$totalOutstanding", 0] } },
-      "totalDisbursed": { "$sum": { "$ifNull": ["$disbursementAmount", 0] } },
-      "avgDPDRaw": { "$avg": { "$ifNull": ["$dpd", 0] } }
-    }
-  },
-  {
-    "$project": {
-      "_id": 0,
-      "totalLoans": 1,
-      "activeLoans": 1,
-      "overdueLoans": 1,
-      "npaLoans": 1,
-      "closedLoans": 1,
-      "totalOutstanding": 1,
-      "totalDisbursed": 1,
-      "overdueRate": {
-        "$divide": [
-          { "$subtract": [
-            { "$multiply": [{ "$divide": ["$overdueLoans", { "$cond": [{ "$gt": ["$activeLoans", 0] }, "$activeLoans", 1] }] }, 1000] },
-            { "$mod": [{ "$multiply": [{ "$divide": ["$overdueLoans", { "$cond": [{ "$gt": ["$activeLoans", 0] }, "$activeLoans", 1] }] }, 1000] }, 1] }
-          ]}, 10
-        ]
-      },
-      "closureRate": {
-        "$divide": [
-          { "$subtract": [
-            { "$multiply": [{ "$divide": ["$closedLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] }, 1000] },
-            { "$mod": [{ "$multiply": [{ "$divide": ["$closedLoans", { "$cond": [{ "$gt": ["$totalLoans", 0] }, "$totalLoans", 1] }] }, 1000] }, 1] }
-          ]}, 10
-        ]
-      },
-      "avgDPD": {
-        "$divide": [
-          { "$subtract": [
-            { "$multiply": ["$avgDPDRaw", 10] },
-            { "$mod": [{ "$multiply": ["$avgDPDRaw", 10] }, 1] }
-          ]}, 10
-        ]
-      }
-    }
-  }
-]
-
-
-
-
 
 v1 vs v2:user journeys
 [

@@ -1,0 +1,291 @@
+Risk Stratification Matrix By CIBIL Score:applications
+[
+  {
+    "$match": {
+      "cibilScore": { "$gt": 0, "$ne": null },
+      "status": { "$in": ["DISBURSED", "REJECTED", "APPROVED"] }
+    }
+  },
+  {
+    "$addFields": {
+      "cibilBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$and": [{ "$gte": ["$cibilScore", 600] }, { "$lt": ["$cibilScore", 650] }] }, "then": "600-650" },
+            { "case": { "$and": [{ "$gte": ["$cibilScore", 650] }, { "$lt": ["$cibilScore", 700] }] }, "then": "650-700" },
+            { "case": { "$and": [{ "$gte": ["$cibilScore", 700] }, { "$lt": ["$cibilScore", 750] }] }, "then": "700-750" },
+            { "case": { "$and": [{ "$gte": ["$cibilScore", 750] }, { "$lt": ["$cibilScore", 800] }] }, "then": "750-800" },
+            { "case": { "$gte": ["$cibilScore", 800] }, "then": "800+" }
+          ],
+          "default": "Below 600"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$cibilBucket",
+      "applications": { "$sum": 1 },
+      "disbursed": {
+        "$sum": { "$cond": [{ "$eq": ["$status", "DISBURSED"] }, 1, 0] }
+      },
+      "rejected": {
+        "$sum": { "$cond": [{ "$eq": ["$status", "REJECTED"] }, 1, 0] }
+      },
+      "avgRiskScore": { "$sum": { "$ifNull": ["$riskScore", 0] } },
+      "avgFraudScore": { "$sum": { "$ifNull": ["$fraudScore", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "range": "$_id",
+      "applications": 1,
+      "disbursed": 1,
+      "rejected": 1,
+      "approvalRate": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$disbursed", { "$max": ["$applications", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "rejectionRate": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$rejected", { "$max": ["$applications", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgRiskScore": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$avgRiskScore", { "$max": ["$applications", 1] }] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgFraudScore": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$avgFraudScore", { "$max": ["$applications", 1] }] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "riskLevel": {
+        "$switch": {
+          "branches": [
+            { "case": { "$gte": [{ "$divide": ["$rejected", { "$max": ["$applications", 1] }] }, 0.35] }, "then": "HIGH" },
+            { "case": { "$gte": [{ "$divide": ["$rejected", { "$max": ["$applications", 1] }] }, 0.25] }, "then": "MEDIUM-HIGH" },
+            { "case": { "$gte": [{ "$divide": ["$rejected", { "$max": ["$applications", 1] }] }, 0.15] }, "then": "MEDIUM" },
+            { "case": { "$gte": [{ "$divide": ["$rejected", { "$max": ["$applications", 1] }] }, 0.05] }, "then": "MEDIUM-LOW" }
+          ],
+          "default": "LOW"
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "range": 1 } }
+]
+
+
+
+
+Risk Stratification Matrix By Employment Type:Customers
+[
+  { "$match": { "employmentType": { "$exists": true, "$ne": null } } },
+  {
+    "$lookup": {
+      "from": "loans",
+      "localField": "_id",
+      "foreignField": "customerId",
+      "as": "loans"
+    }
+  },
+  { "$match": { "loans": { "$ne": [] } } },
+  { "$unwind": "$loans" },
+  {
+    "$group": {
+      "_id": "$employmentType",
+      "loans": { "$sum": 1 },
+      "overdueCount": {
+        "$sum": { "$cond": [{ "$in": ["$loans.status", ["OVERDUE", "NPA"]] }, 1, 0] }
+      },
+      "avgDPDSum": { "$sum": { "$ifNull": ["$loans.dpd", 0] } },
+      "totalLoans": { "$sum": 1 }
+    }
+  },
+  {
+    "$addFields": {
+      "grandTotal": { "$sum": "$totalLoans" }
+    }
+  },
+  {
+    "$group": {
+      "_id": null,
+      "types": {
+        "$push": {
+          "type": "$_id",
+          "loans": "$loans",
+          "overdueCount": "$overdueCount",
+          "avgDPDSum": "$avgDPDSum"
+        }
+      },
+      "grandTotal": { "$sum": "$loans" }
+    }
+  },
+  { "$unwind": "$types" },
+  {
+    "$project": {
+      "type": "$types.type",
+      "loans": "$types.loans",
+      "portfolioShare": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$types.loans", { "$max": ["$grandTotal", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "overdueRate": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$types.overdueCount", { "$max": ["$types.loans", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgDPD": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$types.avgDPDSum", { "$max": ["$types.loans", 1] }] }, 100] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "loans": -1 } }
+]
+
+
+
+
+Risk Stratification Matrix By Loan Amount:loans
+[
+  { "$match": { "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] }, "disbursementAmount": { "$gt": 0 } } },
+  {
+    "$addFields": {
+      "amountBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$lte": ["$disbursementAmount", 5000] }, "then": "0-5K" },
+            { "case": { "$lte": ["$disbursementAmount", 10000] }, "then": "5K-10K" },
+            { "case": { "$lte": ["$disbursementAmount", 15000] }, "then": "10K-15K" },
+            { "case": { "$lte": ["$disbursementAmount", 20000] }, "then": "15K-20K" },
+            { "case": { "$lte": ["$disbursementAmount", 25000] }, "then": "20K-25K" },
+            { "case": { "$lte": ["$disbursementAmount", 30000] }, "then": "25K-30K" }
+          ],
+          "default": "30K+"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$amountBucket",
+      "loans": { "$sum": 1 },
+      "overdueCount": {
+        "$sum": { "$cond": [{ "$in": ["$status", ["OVERDUE", "NPA"]] }, 1, 0] }
+      },
+      "avgDPDSum": { "$sum": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "range": "$_id",
+      "loans": 1,
+      "overdueRate": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgDPD": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$avgDPDSum", { "$max": ["$loans", 1] }] }, 10] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "riskLevel": {
+        "$switch": {
+          "branches": [
+            { "case": { "$gte": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 0.35] }, "then": "HIGH" },
+            { "case": { "$gte": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 0.25] }, "then": "MEDIUM-HIGH" },
+            { "case": { "$gte": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 0.15] }, "then": "MEDIUM" },
+            { "case": { "$gte": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 0.05] }, "then": "MEDIUM-LOW" }
+          ],
+          "default": "LOW"
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "range": 1 } }
+]
+
+
+
+
+Risk Stratification Matrix By Tenure:loans
+[
+  { "$match": { "status": { "$in": ["ACTIVE", "OVERDUE", "NPA", "CLOSED"] }, "tenure": { "$gt": 0 } } },
+  {
+    "$addFields": {
+      "tenureBucket": {
+        "$switch": {
+          "branches": [
+            { "case": { "$eq": ["$tenure", 7] }, "then": "7 days" },
+            { "case": { "$eq": ["$tenure", 15] }, "then": "15 days" },
+            { "case": { "$eq": ["$tenure", 30] }, "then": "30 days" },
+            { "case": { "$eq": ["$tenure", 60] }, "then": "60 days" },
+            { "case": { "$eq": ["$tenure", 90] }, "then": "90 days" }
+          ],
+          "default": "Other"
+        }
+      }
+    }
+  },
+  {
+    "$group": {
+      "_id": "$tenureBucket",
+      "tenureVal": { "$first": "$tenure" },
+      "loans": { "$sum": 1 },
+      "overdueCount": {
+        "$sum": { "$cond": [{ "$in": ["$status", ["OVERDUE", "NPA"]] }, 1, 0] }
+      },
+      "avgDPDSum": { "$sum": { "$ifNull": ["$dpd", 0] } }
+    }
+  },
+  {
+    "$project": {
+      "tenure": "$_id",
+      "loans": 1,
+      "overdueRate": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 1000] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 10] }
+        }
+      },
+      "avgDPD": {
+        "$let": {
+          "vars": { "raw": { "$multiply": [{ "$divide": ["$avgDPDSum", { "$max": ["$loans", 1] }] }, 100] } },
+          "in": { "$divide": [{ "$subtract": ["$$raw", { "$mod": ["$$raw", 1] }] }, 100] }
+        }
+      },
+      "riskLevel": {
+        "$switch": {
+          "branches": [
+            { "case": { "$gte": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 0.35] }, "then": "VERY HIGH" },
+            { "case": { "$gte": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 0.25] }, "then": "HIGH" },
+            { "case": { "$gte": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 0.15] }, "then": "MEDIUM" },
+            { "case": { "$gte": [{ "$divide": ["$overdueCount", { "$max": ["$loans", 1] }] }, 0.05] }, "then": "LOW" }
+          ],
+          "default": "VERY LOW"
+        }
+      },
+      "_id": 0
+    }
+  },
+  { "$sort": { "tenureVal": 1 } }
+]
